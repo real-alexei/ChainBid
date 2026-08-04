@@ -1,0 +1,11 @@
+{
+  "name": "@chainbid/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet (@chainbid/worker)\""
+  }
+}
