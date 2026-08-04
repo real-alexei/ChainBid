@@ -7,9 +7,11 @@ export default defineConfig([
     ignores: [
       '**/dist/**',
       '**/node_modules/**',
+      // hardhat build output: artifacts, the TypeChain bindings, ignition state
       '**/artifacts/**',
       '**/cache/**',
-      '**/typechain-types/**',
+      'contracts/types/**',
+      'contracts/ignition/deployments/**',
     ],
   },
   js.configs.recommended,

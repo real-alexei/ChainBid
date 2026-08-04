@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+
+    // hardhat's runtime plus the mocha globals the test suite relies on
+    "types": ["node", "mocha"]
+  }
+}
