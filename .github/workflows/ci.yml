@@ -28,3 +28,41 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  # Migrations are the source of truth for the schema; the Kysely types are
+  # introspected from them. This job re-derives the types from a fresh database
+  # and fails if the committed file differs, which is what catches a migration
+  # that landed without its regenerated types.
+  schema:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: chainbid
+          POSTGRES_PASSWORD: chainbid
+          POSTGRES_DB: chainbid
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U chainbid -d chainbid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://chainbid:chainbid@localhost:5432/chainbid
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @chainbid/db db:sync
+
+      - name: Fail if the generated types drifted from the migrations
+        run: git diff --exit-code -- packages/db/src/schema.ts

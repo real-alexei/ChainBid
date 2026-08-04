@@ -5,7 +5,19 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b",
+    "migrate": "tsx src/cli.ts",
+    "generate": "kysely-codegen --dialect postgres --out-file src/schema.ts --camel-case false",
+    "db:sync": "pnpm migrate && pnpm generate",
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet (@chainbid/db)\""
+  },
+  "dependencies": {
+    "kysely": "^0.29.4",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.4",
+    "kysely-codegen": "^0.20.0",
+    "tsx": "^4.23.5"
   }
 }

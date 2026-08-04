@@ -12,6 +12,8 @@ export default defineConfig([
       '**/cache/**',
       'contracts/types/**',
       'contracts/ignition/deployments/**',
+      // introspected from the migrated database
+      'packages/db/src/schema.ts',
     ],
   },
   js.configs.recommended,

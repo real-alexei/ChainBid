@@ -17,3 +17,4 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/utils@8.66.0'
   - '@typescript-eslint/visitor-keys@8.66.0'
   - typescript-eslint@8.66.0
+  - '@types/pg@8.20.4'
