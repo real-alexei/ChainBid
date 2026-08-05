@@ -15,5 +15,6 @@ export const AUCTION_ABI = parseAbi([
   'function minimumBid(uint256 auctionId) view returns (uint256)',
   'function pendingReturns(address bidder) view returns (uint256)',
   'function withdraw()',
+  'function claimNft(uint256 auctionId)',
   ...ENGLISH_AUCTION_EVENTS,
 ])

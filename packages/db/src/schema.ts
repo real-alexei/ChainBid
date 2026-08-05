@@ -25,6 +25,8 @@ export type JsonPrimitive = boolean | number | string | null;
 
 export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
+export type NftDeliveryStatus = "claimed" | "pending_claim";
+
 export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
@@ -38,7 +40,9 @@ export interface Auctions {
   current_bidder_address: string | null;
   end_time: Timestamp;
   last_event_block: Int8;
+  nft_claimant_address: string | null;
   nft_contract_address: string;
+  nft_delivery: NftDeliveryStatus | null;
   reserve_price: Numeric;
   seller_address: string;
   start_time: Timestamp;

@@ -202,6 +202,24 @@ export class IndexerService implements OnApplicationBootstrap, OnApplicationShut
             }),
           )
           break
+        case 'NftDeliveryFailed':
+          events.push(
+            chainEventSchema.parse({
+              ...envelope,
+              type: 'NftDeliveryFailed',
+              claimant: String(args['claimant']).toLowerCase(),
+            }),
+          )
+          break
+        case 'NftClaimed':
+          events.push(
+            chainEventSchema.parse({
+              ...envelope,
+              type: 'NftClaimed',
+              claimant: String(args['claimant']).toLowerCase(),
+            }),
+          )
+          break
       }
     }
 

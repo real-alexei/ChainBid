@@ -6,4 +6,6 @@ export const ENGLISH_AUCTION_EVENTS = [
   'event BidPlaced(uint256 indexed auctionId, address indexed bidder, uint256 amount, address previousBidder, uint256 previousBid, uint64 endTime)',
   'event AuctionSettled(uint256 indexed auctionId, address indexed winner, uint256 amount, address indexed seller)',
   'event AuctionCancelled(uint256 indexed auctionId, address indexed seller)',
+  'event NftDeliveryFailed(uint256 indexed auctionId, address indexed claimant)',
+  'event NftClaimed(uint256 indexed auctionId, address indexed claimant)',
 ] as const

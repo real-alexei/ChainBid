@@ -51,7 +51,8 @@ export const getAuctionWithBids = (contractAddress: string, id: string) =>
   graphql<{ auction: AuctionSnapshot & { bids: Bid[] } }>(
     `{ auction(contractAddress: "${contractAddress}", auctionId: "${id}") {
         auctionId contractAddress nftContractAddress tokenId seller
-        reservePrice currentBid currentBidder winner status startTime endTime
+        reservePrice currentBid currentBidder winner status nftDelivery nftClaimant
+        startTime endTime
         bids { auctionId bidder amount txHash blockNumber blockTime } }}`,
   ).then((data) => data.auction)
 

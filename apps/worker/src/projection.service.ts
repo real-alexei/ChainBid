@@ -8,6 +8,8 @@ import {
   type AuctionSettledEvent,
   type BidPlacedEvent,
   type ChainReorgEvent,
+  type NftClaimedEvent,
+  type NftDeliveryFailedEvent,
 } from '@chainbid/shared'
 import {
   Inject,
@@ -111,6 +113,12 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
         break
       case 'AuctionCancelled':
         await this.applyAuctionCancelled(event)
+        break
+      case 'NftDeliveryFailed':
+        await this.applyNftDelivery(event, 'pending_claim')
+        break
+      case 'NftClaimed':
+        await this.applyNftDelivery(event, 'claimed')
         break
     }
 
@@ -221,6 +229,8 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
             winner_address: null,
             current_bid: lastBid?.amount ?? null,
             current_bidder_address: lastBid?.bidder_address ?? null,
+            nft_delivery: null,
+            nft_claimant_address: null,
             last_event_block: event.fromBlock,
             updated_at: new Date(),
           })
@@ -312,6 +322,48 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
           .doUpdateSet({
             status: 'settled',
             winner_address: winner,
+            last_event_block: event.blockNumber,
+            updated_at: new Date(),
+          })
+          .where('last_event_block', '<=', String(event.blockNumber)),
+      )
+      .execute()
+  }
+
+  /**
+   * NftDeliveryFailed downgrades settlement's push to a pull: the claimant
+   * must call claimNft(), and NftClaimed marks that done. The upsert mirrors
+   * the terminal events — a stub row absorbs an event that outran its
+   * AuctionCreated (the Created upsert fills the placeholders in later), and
+   * the last_event_block guard makes a redelivered pending_claim a no-op once
+   * the higher-block claimed has landed.
+   */
+  private async applyNftDelivery(
+    event: NftDeliveryFailedEvent | NftClaimedEvent,
+    delivery: 'pending_claim' | 'claimed',
+  ): Promise<void> {
+    await this.db
+      .insertInto('auctions')
+      .values({
+        contract_address: event.contractAddress,
+        auction_id: event.auctionId,
+        nft_contract_address: ZERO_ADDRESS,
+        token_id: '0',
+        seller_address: ZERO_ADDRESS,
+        reserve_price: '0',
+        start_time: new Date(0),
+        end_time: new Date(0),
+        nft_delivery: delivery,
+        nft_claimant_address: event.claimant,
+        last_event_block: event.blockNumber,
+        created_block: event.blockNumber,
+      })
+      .onConflict((oc) =>
+        oc
+          .columns(['contract_address', 'auction_id'])
+          .doUpdateSet({
+            nft_delivery: delivery,
+            nft_claimant_address: event.claimant,
             last_event_block: event.blockNumber,
             updated_at: new Date(),
           })

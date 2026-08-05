@@ -54,11 +54,27 @@ export const auctionCancelledSchema = z.object({
   seller: address,
 })
 
+// Settlement pushed the token but the transfer reverted; `claimant` must pull
+// it with claimNft(). Fires inside the same tx as Settled/Cancelled.
+export const nftDeliveryFailedSchema = z.object({
+  ...envelope,
+  type: z.literal('NftDeliveryFailed'),
+  claimant: address,
+})
+
+export const nftClaimedSchema = z.object({
+  ...envelope,
+  type: z.literal('NftClaimed'),
+  claimant: address,
+})
+
 export const chainEventSchema = z.discriminatedUnion('type', [
   auctionCreatedSchema,
   bidPlacedSchema,
   auctionSettledSchema,
   auctionCancelledSchema,
+  nftDeliveryFailedSchema,
+  nftClaimedSchema,
 ])
 
 // Not an on-chain event: the indexer publishes this before replaying a range
@@ -77,6 +93,8 @@ export const chainMessageSchema = z.discriminatedUnion('type', [
   bidPlacedSchema,
   auctionSettledSchema,
   auctionCancelledSchema,
+  nftDeliveryFailedSchema,
+  nftClaimedSchema,
   chainReorgSchema,
 ])
 
@@ -84,6 +102,8 @@ export type AuctionCreatedEvent = z.infer<typeof auctionCreatedSchema>
 export type BidPlacedEvent = z.infer<typeof bidPlacedSchema>
 export type AuctionSettledEvent = z.infer<typeof auctionSettledSchema>
 export type AuctionCancelledEvent = z.infer<typeof auctionCancelledSchema>
+export type NftDeliveryFailedEvent = z.infer<typeof nftDeliveryFailedSchema>
+export type NftClaimedEvent = z.infer<typeof nftClaimedSchema>
 export type ChainEvent = z.infer<typeof chainEventSchema>
 export type ChainReorgEvent = z.infer<typeof chainReorgSchema>
 export type ChainMessage = z.infer<typeof chainMessageSchema>

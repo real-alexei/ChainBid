@@ -68,6 +68,20 @@ export function AuctionPage() {
     }
   }
 
+  const claimNft = async () => {
+    setError(null)
+    try {
+      await writeContract.mutateAsync({
+        address: auctionContract,
+        abi: AUCTION_ABI,
+        functionName: 'claimNft',
+        args: [BigInt(auctionId)],
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message.split('\n')[0]! : String(err))
+    }
+  }
+
   const toggleWatch = async () => {
     if (address === undefined) return
     setError(null)
@@ -130,6 +144,25 @@ export function AuctionPage() {
           <dd className="font-mono text-lg">{shortAddress(auction.currentBidder)}</dd>
         </div>
       </dl>
+
+      {auction.nftDelivery === 'pending_claim' && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+          <p className="text-amber-300">
+            The NFT could not be delivered on settlement —{' '}
+            <span className="font-mono">{shortAddress(auction.nftClaimant)}</span> must claim it
+            from the contract.
+          </p>
+          {address !== undefined && address.toLowerCase() === auction.nftClaimant && (
+            <button
+              onClick={() => void claimNft()}
+              disabled={writeContract.isPending}
+              className="shrink-0 rounded bg-amber-500 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-40"
+            >
+              {writeContract.isPending ? 'Confirm in wallet…' : 'Claim NFT'}
+            </button>
+          )}
+        </div>
+      )}
 
       {auction.status === 'live' && (
         <div className="flex gap-2">

@@ -44,6 +44,15 @@ export class AuctionModel {
   @Field(() => AuctionStatusGql)
   status!: string
 
+  // A plain string, not a registered enum: GraphQL serializes enum values to
+  // their UPPERCASE names, and every other consumer sees the snapshot's
+  // lowercase values.
+  @Field(() => String, { nullable: true })
+  nftDelivery!: string | null
+
+  @Field(() => String, { nullable: true })
+  nftClaimant!: string | null
+
   @Field()
   startTime!: string
 

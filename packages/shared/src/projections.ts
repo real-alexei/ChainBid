@@ -7,7 +7,14 @@ const address = z.string().regex(/^0x[0-9a-f]{40}$/)
 const uint256 = z.string().regex(/^\d+$/)
 
 export const auctionProjectedSchema = z.object({
-  type: z.enum(['AuctionCreated', 'BidPlaced', 'AuctionSettled', 'AuctionCancelled']),
+  type: z.enum([
+    'AuctionCreated',
+    'BidPlaced',
+    'AuctionSettled',
+    'AuctionCancelled',
+    'NftDeliveryFailed',
+    'NftClaimed',
+  ]),
   contractAddress: address,
   auctionId: uint256,
   blockNumber: z.number().int().nonnegative(),
@@ -27,6 +34,10 @@ export const auctionSnapshotSchema = z.object({
   currentBidder: address.nullable(),
   winner: address.nullable(),
   status: z.enum(['created', 'live', 'settled', 'cancelled']),
+  // Null until settlement fails to push the token; then the recipient shows up
+  // here and must pull it with claimNft().
+  nftDelivery: z.enum(['pending_claim', 'claimed']).nullable(),
+  nftClaimant: address.nullable(),
   startTime: z.iso.datetime(),
   endTime: z.iso.datetime(),
 })
@@ -34,7 +45,15 @@ export const auctionSnapshotSchema = z.object({
 export type AuctionSnapshot = z.infer<typeof auctionSnapshotSchema>
 
 export const auctionUpdateSchema = z.object({
-  event: z.enum(['auction.created', 'bid.placed', 'auction.settled', 'auction.cancelled']),
+  // The nft.* pair keeps the auction. prefix — the web feed filters on it.
+  event: z.enum([
+    'auction.created',
+    'bid.placed',
+    'auction.settled',
+    'auction.cancelled',
+    'auction.nft_delivery_failed',
+    'auction.nft_claimed',
+  ]),
   auction: auctionSnapshotSchema,
 })
 
@@ -45,6 +64,8 @@ export const AUCTION_UPDATE_EVENTS = {
   BidPlaced: 'bid.placed',
   AuctionSettled: 'auction.settled',
   AuctionCancelled: 'auction.cancelled',
+  NftDeliveryFailed: 'auction.nft_delivery_failed',
+  NftClaimed: 'auction.nft_claimed',
 } as const satisfies Record<AuctionProjected['type'], AuctionUpdate['event']>
 
 /**
@@ -62,6 +83,8 @@ export function toAuctionSnapshot(row: {
   current_bidder_address: string | null
   winner_address: string | null
   status: AuctionSnapshot['status']
+  nft_delivery: AuctionSnapshot['nftDelivery']
+  nft_claimant_address: string | null
   start_time: Date
   end_time: Date
 }): AuctionSnapshot {
@@ -76,6 +99,8 @@ export function toAuctionSnapshot(row: {
     currentBidder: row.current_bidder_address,
     winner: row.winner_address,
     status: row.status,
+    nftDelivery: row.nft_delivery,
+    nftClaimant: row.nft_claimant_address,
     startTime: row.start_time.toISOString(),
     endTime: row.end_time.toISOString(),
   }
