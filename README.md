@@ -106,11 +106,19 @@ full e2e above on every push.
 - **Bids are on-chain and escrowed**, refunds are pull-payments — the architecture of single-item
   timed auctions, where low bid counts make per-bid gas negligible and escrow means a winning bid
   cannot fail to pay. It also makes the indexer the load-bearing component rather than a formality.
-- **Migration-first schema**: migrations are the source of truth; the Kysely types in
-  `packages/db/src/schema.ts` are generated from the migrated database, never edited by hand.
+  The alternative — an off-chain order book of signed bids with on-chain settlement, what
+  high-volume marketplaces run — trades that guarantee for gas-free offer revision; a single-item
+  auction does not need to make that trade.
+- **Types flow from the database to the UI**: migrations are the source of truth, the Kysely types
+  in `packages/db/src/schema.ts` are generated from the migrated schema (never edited by hand, CI
+  fails on drift), and the api, worker, and SPA all consume the same zod-validated snapshot types
+  from `packages/shared` — one unbroken chain from a Postgres column to a React prop.
 - **Event schemas live in code**: zod contracts in `packages/shared`, enforced at both produce and
   consume time; producer and consumer import the same package, so drift is a compile error.
-- **The outbox is polled** (partial index on unpublished rows); at scale the same table feeds CDC.
+- **API-originated events use the transactional outbox pattern** — the state change and the event
+  commit in one Postgres transaction, and a relay moves unpublished rows to Kafka, so neither can
+  exist without the other. The relay polls (partial index on unpublished rows); at scale the same
+  table feeds CDC.
 - **Wei is `numeric(78,0)`** and travels as decimal strings end to end — `uint256` never touches
   JS number range.
 
