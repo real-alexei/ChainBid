@@ -19,6 +19,17 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    solidity: {
+      // The auction bugs worth catching are orderings, not values: create,
+      // cancel, then bid. The default sequence length is too short to stumble
+      // into one, so give the campaign room to explore.
+      invariant: {
+        runs: 256,
+        depth: 100,
+      },
+    },
+  },
   networks: {
     hardhatMainnet: {
       type: 'edr-simulated',
