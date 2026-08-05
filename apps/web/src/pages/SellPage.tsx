@@ -25,20 +25,23 @@ export function SellPage() {
     setError(null)
     try {
       // Three transactions: mint the token, approve the escrow, open the
-      // auction. The auction id comes from the AuctionCreated log.
+      // auction. Both ids are read back from logs — the token id from the mint's
+      // Transfer, the auction id from AuctionCreated.
       setStep('1/3 minting…')
-      const tokenId = await publicClient.readContract({
-        address: NFT_ADDRESS,
-        abi: NFT_ABI,
-        functionName: 'nextTokenId',
-      })
       const mintHash = await writeContract.mutateAsync({
         address: NFT_ADDRESS,
         abi: NFT_ABI,
         functionName: 'safeMint',
         args: [address, uri],
       })
-      await publicClient.waitForTransactionReceipt({ hash: mintHash })
+      const mintReceipt = await publicClient.waitForTransactionReceipt({ hash: mintHash })
+      const [minted] = parseEventLogs({
+        abi: NFT_ABI,
+        eventName: 'Transfer',
+        logs: mintReceipt.logs,
+      })
+      if (minted === undefined) throw new Error('Transfer log missing')
+      const tokenId = minted.args.tokenId
 
       setStep('2/3 approving escrow…')
       const approveHash = await writeContract.mutateAsync({

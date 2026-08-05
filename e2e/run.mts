@@ -58,12 +58,19 @@ const nft = new Contract(
   [
     'function safeMint(address to, string uri) returns (uint256)',
     'function approve(address to, uint256 tokenId)',
-    'function nextTokenId() view returns (uint256)',
+    'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
   ],
   seller,
 )
-const tokenId = (await nft['nextTokenId']!()) as bigint
-await (await nft['safeMint']!(sellerAddress, `ipfs://e2e/${tokenId}`)).wait()
+// Minting is permissionless, so nextTokenId() is only a guess: a concurrent
+// mint (a second run, or the web app against the same node) would shift the id
+// and we would escrow a token this run never minted. The Transfer log is fact.
+const mintReceipt = await (await nft['safeMint']!(sellerAddress, 'ipfs://e2e/token')).wait()
+const minted = mintReceipt.logs
+  .map((log: { topics: readonly string[]; data: string }) => nft.interface.parseLog(log))
+  .find((parsed: { name: string } | null) => parsed?.name === 'Transfer')
+assert.ok(minted, 'Transfer log missing')
+const tokenId = minted.args['tokenId'] as bigint
 await (await nft['approve']!(AUCTION_ADDRESS, tokenId)).wait()
 
 const auction = new Contract(
