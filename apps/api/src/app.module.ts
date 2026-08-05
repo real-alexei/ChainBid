@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common'
+import { AuctionsModule } from './auctions/auctions.module.js'
 import { AuthModule } from './auth/auth.module.js'
 import { InfraModule } from './infra.module.js'
 
 @Module({
-  imports: [InfraModule, AuthModule],
+  imports: [InfraModule, AuthModule, AuctionsModule],
 })
 export class AppModule {}

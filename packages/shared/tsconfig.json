@@ -4,8 +4,8 @@
     "rootDir": "src",
     "outDir": "dist",
 
-    // consumed by the apps, so ship types
-    "declaration": true,
+    // consumed by the apps via project references, so ship types
+    "composite": true,
     "declarationMap": true
   },
   "include": ["src/**/*"]

@@ -3,9 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet (@chainbid/shared)\""
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }
