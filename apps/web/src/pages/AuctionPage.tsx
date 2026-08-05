@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { useState } from 'react'
-import { parseEther } from 'viem'
-import { useConnection, useSignMessage, useWriteContract } from 'wagmi'
+import { formatEther, parseEther } from 'viem'
+import { useConnection, useReadContract, useSignMessage, useWriteContract } from 'wagmi'
 import { AUCTION_ABI } from '../abi'
 import { getAuctionWithBids, getToken, siweLogin, unwatchAuction, watchAuction } from '../api'
 import { AUCTION_ADDRESS } from '../config'
@@ -28,11 +28,21 @@ export function AuctionPage() {
     queryFn: () => getAuctionWithBids(auctionId),
   })
 
+  // A bid has to clear the standing one by the contract's increment, so read the
+  // floor from the chain instead of guessing and letting the wallet eat a revert.
+  const { data: floorBid, refetch: refetchFloorBid } = useReadContract({
+    address: AUCTION_ADDRESS,
+    abi: AUCTION_ABI,
+    functionName: 'minimumBid',
+    args: [BigInt(auctionId)],
+  })
+
   // Chain → indexer → Kafka → projection → pub/sub → here, in about a second.
   useAuctionFeed(auctionId, (event) => {
     setFeed((prev) => [...prev, `${new Date().toLocaleTimeString()} ${event}`])
     void queryClient.invalidateQueries({ queryKey: ['auction', auctionId] })
     void queryClient.invalidateQueries({ queryKey: ['auctions'] })
+    void refetchFloorBid()
   })
 
   if (auction === undefined) return <p className="text-zinc-400">Loading…</p>
@@ -48,6 +58,7 @@ export function AuctionPage() {
         value: parseEther(amount),
       })
       setAmount('')
+      void refetchFloorBid()
     } catch (err) {
       setError(err instanceof Error ? err.message.split('\n')[0]! : String(err))
     }
@@ -119,7 +130,9 @@ export function AuctionPage() {
           <input
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="ETH"
+            // The contract requires a 5% raise over the standing bid, so show the
+            // floor it will actually accept rather than letting the wallet revert.
+            placeholder={floorBid === undefined ? 'ETH' : `min ${formatEther(floorBid)}`}
             className="w-32 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           />
           <button
