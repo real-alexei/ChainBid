@@ -40,7 +40,7 @@ const rootRoute = createRootRoute({ component: Layout })
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: ListPage })
 const auctionRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/auction/$auctionId',
+  path: '/auction/$contractAddress/$auctionId',
   component: AuctionPage,
 })
 const sellRoute = createRoute({

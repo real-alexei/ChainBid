@@ -17,9 +17,10 @@ interface WsReply {
 
 /**
  * Raw-WebSocket feed (no socket.io — the frontend uses the native client).
- * Clients send {"event":"subscribe","data":{"auctionId":"1"}} and receive
- * auction.* frames published by the worker over Redis pub/sub, so the feed
- * works identically with any number of api instances behind a balancer.
+ * Clients send {"event":"subscribe","data":{"contractAddress":"0x…","auctionId":"1"}}
+ * and receive auction.* frames published by the worker over Redis pub/sub, so the
+ * feed works identically with any number of api instances behind a balancer.
+ * Rooms are keyed by (contract, id) — a bare auctionId collides across deployments.
  */
 @WebSocketGateway({ path: '/ws' })
 export class AuctionsGateway implements OnApplicationBootstrap, OnGatewayDisconnect {
@@ -35,15 +36,14 @@ export class AuctionsGateway implements OnApplicationBootstrap, OnGatewayDisconn
 
   @SubscribeMessage('subscribe')
   subscribe(@ConnectedSocket() client: WebSocket, @MessageBody() body: unknown): WsReply {
-    const auctionId = auctionIdFrom(body)
-    if (auctionId === null) {
-      return { event: 'error', data: { message: 'auctionId must be a decimal string' } }
-    }
+    const target = auctionRefFrom(body)
+    if (target === null) return { event: 'error', data: { message: SUBSCRIBE_ERROR } }
 
-    let room = this.rooms.get(auctionId)
+    const key = roomKey(target.contractAddress, target.auctionId)
+    let room = this.rooms.get(key)
     if (room === undefined) {
       room = new Set()
-      this.rooms.set(auctionId, room)
+      this.rooms.set(key, room)
     }
     room.add(client)
 
@@ -52,26 +52,25 @@ export class AuctionsGateway implements OnApplicationBootstrap, OnGatewayDisconn
       joined = new Set()
       this.memberships.set(client, joined)
     }
-    joined.add(auctionId)
+    joined.add(key)
 
-    return { event: 'subscribed', data: { auctionId } }
+    return { event: 'subscribed', data: target }
   }
 
   @SubscribeMessage('unsubscribe')
   unsubscribe(@ConnectedSocket() client: WebSocket, @MessageBody() body: unknown): WsReply {
-    const auctionId = auctionIdFrom(body)
-    if (auctionId === null) {
-      return { event: 'error', data: { message: 'auctionId must be a decimal string' } }
-    }
-    this.rooms.get(auctionId)?.delete(client)
-    this.memberships.get(client)?.delete(auctionId)
-    return { event: 'unsubscribed', data: { auctionId } }
+    const target = auctionRefFrom(body)
+    if (target === null) return { event: 'error', data: { message: SUBSCRIBE_ERROR } }
+    const key = roomKey(target.contractAddress, target.auctionId)
+    this.rooms.get(key)?.delete(client)
+    this.memberships.get(client)?.delete(key)
+    return { event: 'unsubscribed', data: target }
   }
 
   handleDisconnect(client: WebSocket): void {
     const joined = this.memberships.get(client)
     if (joined === undefined) return
-    for (const auctionId of joined) this.rooms.get(auctionId)?.delete(client)
+    for (const key of joined) this.rooms.get(key)?.delete(client)
     this.memberships.delete(client)
   }
 
@@ -90,7 +89,7 @@ export class AuctionsGateway implements OnApplicationBootstrap, OnGatewayDisconn
     }
 
     const update = parsed.data
-    const room = this.rooms.get(update.auction.auctionId)
+    const room = this.rooms.get(roomKey(update.auction.contractAddress, update.auction.auctionId))
     if (room === undefined || room.size === 0) return
 
     const frame = JSON.stringify({ event: update.event, data: update.auction })
@@ -100,8 +99,19 @@ export class AuctionsGateway implements OnApplicationBootstrap, OnGatewayDisconn
   }
 }
 
-function auctionIdFrom(body: unknown): string | null {
+const SUBSCRIBE_ERROR =
+  'contractAddress must be a 0x-prefixed hex address and auctionId a decimal string'
+
+function roomKey(contractAddress: string, auctionId: string): string {
+  return `${contractAddress.toLowerCase()}:${auctionId}`
+}
+
+function auctionRefFrom(body: unknown): { contractAddress: string; auctionId: string } | null {
   if (typeof body !== 'object' || body === null) return null
-  const value = (body as { auctionId?: unknown }).auctionId
-  return typeof value === 'string' && /^\d+$/.test(value) ? value : null
+  const { contractAddress, auctionId } = body as { contractAddress?: unknown; auctionId?: unknown }
+  if (typeof contractAddress !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(contractAddress)) {
+    return null
+  }
+  if (typeof auctionId !== 'string' || !/^\d+$/.test(auctionId)) return null
+  return { contractAddress: contractAddress.toLowerCase(), auctionId }
 }

@@ -66,8 +66,11 @@ export function SellPage() {
 
       setStep(null)
       void navigate({
-        to: '/auction/$auctionId',
-        params: { auctionId: String(created.args.auctionId) },
+        to: '/auction/$contractAddress/$auctionId',
+        params: {
+          contractAddress: AUCTION_ADDRESS.toLowerCase(),
+          auctionId: String(created.args.auctionId),
+        },
       })
     } catch (err) {
       setStep(null)

@@ -5,14 +5,18 @@ import { formatEther, parseEther } from 'viem'
 import { useConnection, useReadContract, useSignMessage, useWriteContract } from 'wagmi'
 import { AUCTION_ABI } from '../abi'
 import { getAuctionWithBids, getToken, siweLogin, unwatchAuction, watchAuction } from '../api'
-import { AUCTION_ADDRESS } from '../config'
 import { Countdown } from '../components/Countdown'
 import { StatusBadge } from '../components/StatusBadge'
 import { eth, shortAddress } from '../format'
 import { useAuctionFeed } from '../ws'
 
 export function AuctionPage() {
-  const { auctionId } = useParams({ from: '/auction/$auctionId' })
+  // The URL carries the auction's full identity; chain calls target the
+  // contract from the URL, not a globally configured one.
+  const { contractAddress, auctionId } = useParams({
+    from: '/auction/$contractAddress/$auctionId',
+  })
+  const auctionContract = contractAddress as `0x${string}`
   const queryClient = useQueryClient()
   const { address, isConnected } = useConnection()
   const signMessage = useSignMessage()
@@ -24,23 +28,23 @@ export function AuctionPage() {
   const [watching, setWatching] = useState(false)
 
   const { data: auction } = useQuery({
-    queryKey: ['auction', auctionId],
-    queryFn: () => getAuctionWithBids(auctionId),
+    queryKey: ['auction', contractAddress, auctionId],
+    queryFn: () => getAuctionWithBids(contractAddress, auctionId),
   })
 
   // A bid has to clear the standing one by the contract's increment, so read the
   // floor from the chain instead of guessing and letting the wallet eat a revert.
   const { data: floorBid, refetch: refetchFloorBid } = useReadContract({
-    address: AUCTION_ADDRESS,
+    address: auctionContract,
     abi: AUCTION_ABI,
     functionName: 'minimumBid',
     args: [BigInt(auctionId)],
   })
 
   // Chain → indexer → Kafka → projection → pub/sub → here, in about a second.
-  useAuctionFeed(auctionId, (event) => {
+  useAuctionFeed(contractAddress, auctionId, (event) => {
     setFeed((prev) => [...prev, `${new Date().toLocaleTimeString()} ${event}`])
-    void queryClient.invalidateQueries({ queryKey: ['auction', auctionId] })
+    void queryClient.invalidateQueries({ queryKey: ['auction', contractAddress, auctionId] })
     void queryClient.invalidateQueries({ queryKey: ['auctions'] })
     void refetchFloorBid()
   })
@@ -51,7 +55,7 @@ export function AuctionPage() {
     setError(null)
     try {
       await writeContract.mutateAsync({
-        address: AUCTION_ADDRESS,
+        address: auctionContract,
         abi: AUCTION_ABI,
         functionName: 'bid',
         args: [BigInt(auctionId)],
@@ -71,7 +75,9 @@ export function AuctionPage() {
       if (getToken() === null) {
         await siweLogin(address, (args) => signMessage.mutateAsync(args))
       }
-      await (watching ? unwatchAuction(auctionId) : watchAuction(auctionId))
+      await (watching
+        ? unwatchAuction(contractAddress, auctionId)
+        : watchAuction(contractAddress, auctionId))
       setWatching(!watching)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

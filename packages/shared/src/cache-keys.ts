@@ -6,7 +6,10 @@ import type { AuctionSnapshot } from './projections.js'
 type AuctionStatusName = AuctionSnapshot['status']
 
 export const CACHE_KEYS = {
-  auction: (auctionId: string): string => `auction:${auctionId}`,
+  // auctionId is only unique within one contract deployment, so the key
+  // carries both halves of the auction's identity.
+  auction: (contractAddress: string, auctionId: string): string =>
+    `auction:${contractAddress}:${auctionId}`,
   auctionList: (status?: AuctionStatusName): string => `auctions:${status ?? 'all'}`,
 } as const
 

@@ -32,8 +32,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const listAuctions = () => request<AuctionSnapshot[]>('/auctions')
 export const getWatchlist = () => request<AuctionSnapshot[]>('/watchlist')
-export const watchAuction = (id: string) => request(`/auctions/${id}/watch`, { method: 'POST' })
-export const unwatchAuction = (id: string) => request(`/auctions/${id}/watch`, { method: 'DELETE' })
+export const watchAuction = (contractAddress: string, id: string) =>
+  request(`/auctions/${contractAddress}/${id}/watch`, { method: 'POST' })
+export const unwatchAuction = (contractAddress: string, id: string) =>
+  request(`/auctions/${contractAddress}/${id}/watch`, { method: 'DELETE' })
 
 export async function graphql<T>(query: string): Promise<T> {
   const body = await request<{ data?: T; errors?: { message: string }[] }>('/graphql', {
@@ -45,9 +47,10 @@ export async function graphql<T>(query: string): Promise<T> {
   return body.data
 }
 
-export const getAuctionWithBids = (id: string) =>
+export const getAuctionWithBids = (contractAddress: string, id: string) =>
   graphql<{ auction: AuctionSnapshot & { bids: Bid[] } }>(
-    `{ auction(auctionId: "${id}") { auctionId contractAddress nftContractAddress tokenId seller
+    `{ auction(contractAddress: "${contractAddress}", auctionId: "${id}") {
+        auctionId contractAddress nftContractAddress tokenId seller
         reservePrice currentBid currentBidder winner status startTime endTime
         bids { auctionId bidder amount txHash blockNumber blockTime } }}`,
   ).then((data) => data.auction)

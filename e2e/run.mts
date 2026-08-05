@@ -82,7 +82,9 @@ const created = receipt.logs
   .find((parsed: { name: string } | null) => parsed?.name === 'AuctionCreated')
 assert.ok(created, 'AuctionCreated log missing')
 const auctionId = String(created.args['auctionId'])
-console.log(`auction ${auctionId} created for token ${tokenId}`)
+// The read model keys auctions by (contract, id); addresses are stored lowercase.
+const auctionContract = AUCTION_ADDRESS.toLowerCase()
+console.log(`auction ${auctionContract}/${auctionId} created for token ${tokenId}`)
 
 // --- 2. capture the WS stream for this auction -----------------------------
 const frames: { event: string; data: { currentBid: string | null; status: string } }[] = []
@@ -90,7 +92,9 @@ const ws = new WebSocket(`${API.replace('http', 'ws')}/ws`)
 ws.onmessage = (msg) => frames.push(JSON.parse(String(msg.data)))
 await new Promise<void>((resolve, reject) => {
   ws.onopen = () => {
-    ws.send(JSON.stringify({ event: 'subscribe', data: { auctionId } }))
+    ws.send(
+      JSON.stringify({ event: 'subscribe', data: { contractAddress: auctionContract, auctionId } }),
+    )
     resolve()
   }
   ws.onerror = () => reject(new Error('ws connect failed'))
@@ -109,13 +113,15 @@ const highBidder = (await (await provider.getSigner(3)).getAddress()).toLowerCas
 // --- 4. REST read model catches up -----------------------------------------
 for (let i = 0; i < 6; i++) await provider.send('evm_mine', [])
 const auctionRest = await waitFor('REST projection', 30_000, async () => {
-  const res = await fetch(`${API}/auctions/${auctionId}`)
+  const res = await fetch(`${API}/auctions/${auctionContract}/${auctionId}`)
   if (!res.ok) return null
   const body = (await res.json()) as { currentBid: string | null; currentBidder: string | null }
   return body.currentBid === highBid ? body : null
 })
 assert.equal(auctionRest.currentBidder, highBidder)
-const bids = await json<{ amount: string }[]>(await fetch(`${API}/auctions/${auctionId}/bids`))
+const bids = await json<{ amount: string }[]>(
+  await fetch(`${API}/auctions/${auctionContract}/${auctionId}/bids`),
+)
 assert.equal(bids.length, 3)
 assert.equal(bids[0]?.amount, highBid)
 console.log('REST: current bid and 3-bid history match')
@@ -123,7 +129,9 @@ console.log('REST: current bid and 3-bid history match')
 // --- 5. GraphQL agrees with REST -------------------------------------------
 const gql = await graphql<{
   auction: { currentBid: string; status: string; bids: { amount: string; bidder: string }[] }
-}>(`{ auction(auctionId: "${auctionId}") { currentBid status bids { amount bidder } } }`)
+}>(
+  `{ auction(contractAddress: "${auctionContract}", auctionId: "${auctionId}") { currentBid status bids { amount bidder } } }`,
+)
 assert.equal(gql.auction.currentBid, highBid)
 assert.equal(gql.auction.status, 'LIVE')
 assert.equal(gql.auction.bids.length, 3)
@@ -149,7 +157,12 @@ const { token } = await json<{ token: string }>(
   }),
 )
 const auth = { authorization: `Bearer ${token}` }
-await json(await fetch(`${API}/auctions/${auctionId}/watch`, { method: 'POST', headers: auth }))
+await json(
+  await fetch(`${API}/auctions/${auctionContract}/${auctionId}/watch`, {
+    method: 'POST',
+    headers: auth,
+  }),
+)
 const watchlist = await json<{ auctionId: string }[]>(
   await fetch(`${API}/watchlist`, { headers: auth }),
 )
@@ -160,7 +173,7 @@ console.log('SIWE + watchlist: ok')
 await provider.send('evm_increaseTime', [3700])
 await waitFor('auto-settlement', 90_000, async () => {
   await provider.send('evm_mine', [])
-  const res = await fetch(`${API}/auctions/${auctionId}`)
+  const res = await fetch(`${API}/auctions/${auctionContract}/${auctionId}`)
   if (!res.ok) return null
   const body = (await res.json()) as { status: string; winner: string | null }
   return body.status === 'settled' ? body : null

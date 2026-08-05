@@ -102,8 +102,11 @@ export function MePage() {
             {watchlist.map((auction) => (
               <li key={`${auction.contractAddress}-${auction.auctionId}`}>
                 <Link
-                  to="/auction/$auctionId"
-                  params={{ auctionId: auction.auctionId }}
+                  to="/auction/$contractAddress/$auctionId"
+                  params={{
+                    contractAddress: auction.contractAddress,
+                    auctionId: auction.auctionId,
+                  }}
                   className="flex items-center justify-between rounded border border-zinc-800 px-3 py-2 text-sm hover:border-zinc-600"
                 >
                   <span>

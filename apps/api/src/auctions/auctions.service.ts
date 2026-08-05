@@ -29,7 +29,7 @@ export class AuctionsService {
     })
   }
 
-  /** Cursor-paginated variant for GraphQL; keyset on (end_time, auction_id). */
+  /** Cursor-paginated variant for GraphQL; keyset on (end_time, contract_address, auction_id). */
   async listConnection(
     status: AuctionStatus | undefined,
     first: number,
@@ -39,6 +39,7 @@ export class AuctionsService {
       .selectFrom('auctions')
       .selectAll()
       .orderBy('end_time', 'asc')
+      .orderBy('contract_address', 'asc')
       .orderBy('auction_id', 'asc')
       .limit(first + 1)
     if (status !== undefined) query = query.where('status', '=', status)
@@ -47,7 +48,15 @@ export class AuctionsService {
       query = query.where((eb) =>
         eb.or([
           eb('end_time', '>', cursor.endTime),
-          eb.and([eb('end_time', '=', cursor.endTime), eb('auction_id', '>', cursor.auctionId)]),
+          eb.and([
+            eb('end_time', '=', cursor.endTime),
+            eb('contract_address', '>', cursor.contractAddress),
+          ]),
+          eb.and([
+            eb('end_time', '=', cursor.endTime),
+            eb('contract_address', '=', cursor.contractAddress),
+            eb('auction_id', '>', cursor.auctionId),
+          ]),
         ]),
       )
     }
@@ -62,24 +71,31 @@ export class AuctionsService {
     }
   }
 
-  async byId(auctionId: string): Promise<AuctionSnapshot> {
-    const snapshot = await this.cached(CACHE_KEYS.auction(auctionId), async () => {
+  // auctionId alone is ambiguous — each contract deployment numbers its
+  // auctions from 1 — so both lookups take the full (contract, id) identity.
+  async byId(contractAddress: string, auctionId: string): Promise<AuctionSnapshot> {
+    const contract = contractAddress.toLowerCase()
+    const snapshot = await this.cached(CACHE_KEYS.auction(contract, auctionId), async () => {
       const row = await this.db
         .selectFrom('auctions')
         .selectAll()
+        .where('contract_address', '=', contract)
         .where('auction_id', '=', auctionId)
         .executeTakeFirst()
       return row === undefined ? null : toAuctionSnapshot(row)
     })
-    if (snapshot === null) throw new NotFoundException(`auction ${auctionId} not found`)
+    if (snapshot === null) {
+      throw new NotFoundException(`auction ${contract}/${auctionId} not found`)
+    }
     return snapshot
   }
 
-  async bids(auctionId: string): Promise<BidDto[]> {
-    await this.byId(auctionId)
+  async bids(contractAddress: string, auctionId: string): Promise<BidDto[]> {
+    await this.byId(contractAddress, auctionId)
     const rows = await this.db
       .selectFrom('bids')
       .selectAll()
+      .where('contract_address', '=', contractAddress.toLowerCase())
       .where('auction_id', '=', auctionId)
       .orderBy('block_number', 'desc')
       .orderBy('log_index', 'desc')
@@ -117,14 +133,26 @@ function toBidDto(row: BidRow): BidDto {
 }
 
 function encodeCursor(row: AuctionRow): string {
-  return Buffer.from(`${row.end_time.toISOString()}|${row.auction_id}`).toString('base64url')
+  return Buffer.from(
+    `${row.end_time.toISOString()}|${row.contract_address}|${row.auction_id}`,
+  ).toString('base64url')
 }
 
-function decodeCursor(after: string): { endTime: Date; auctionId: string } {
-  const [iso, auctionId] = Buffer.from(after, 'base64url').toString().split('|')
+function decodeCursor(after: string): {
+  endTime: Date
+  contractAddress: string
+  auctionId: string
+} {
+  const [iso, contractAddress, auctionId] = Buffer.from(after, 'base64url').toString().split('|')
   const endTime = new Date(iso ?? '')
-  if (Number.isNaN(endTime.getTime()) || auctionId === undefined || !/^\d+$/.test(auctionId)) {
+  if (
+    Number.isNaN(endTime.getTime()) ||
+    contractAddress === undefined ||
+    !/^0x[0-9a-f]{40}$/.test(contractAddress) ||
+    auctionId === undefined ||
+    !/^\d+$/.test(auctionId)
+  ) {
     throw new BadRequestException('malformed cursor')
   }
-  return { endTime, auctionId }
+  return { endTime, contractAddress, auctionId }
 }
