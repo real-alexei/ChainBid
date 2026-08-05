@@ -1,5 +1,6 @@
 import type { Db } from '@chainbid/db'
 import {
+  auctionProjectedSchema,
   chainEventSchema,
   TOPICS,
   type AuctionCancelledEvent,
@@ -14,7 +15,8 @@ import {
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from '@nestjs/common'
-import type { Consumer, Kafka, KafkaMessage } from 'kafkajs'
+import type { Consumer, Kafka, KafkaMessage, Producer } from 'kafkajs'
+import { retry } from './retry.js'
 import { DB, KAFKA } from './tokens.js'
 
 const ZERO_ADDRESS = `0x${'00'.repeat(20)}`
@@ -23,6 +25,7 @@ const ZERO_ADDRESS = `0x${'00'.repeat(20)}`
 export class ProjectionService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(ProjectionService.name)
   private consumer!: Consumer
+  private producer!: Producer
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -35,21 +38,32 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
     const admin = this.kafka.admin()
     await admin.connect()
     await admin.createTopics({
-      topics: [{ topic: TOPICS.chainEvents, numPartitions: 1, replicationFactor: 1 }],
+      topics: [
+        { topic: TOPICS.chainEvents, numPartitions: 1, replicationFactor: 1 },
+        { topic: TOPICS.auctionProjected, numPartitions: 1, replicationFactor: 1 },
+      ],
     })
     await admin.disconnect()
 
+    this.producer = this.kafka.producer()
+    await this.producer.connect()
+
     this.consumer = this.kafka.consumer({ groupId: 'chainbid-projections' })
-    await this.consumer.connect()
-    await this.consumer.subscribe({ topic: TOPICS.chainEvents, fromBeginning: true })
-    await this.consumer.run({
-      eachMessage: async ({ message }) => this.handle(message),
+    // Retried because a freshly declared topic's metadata may not have
+    // propagated within the broker yet.
+    await retry(5, 2_000, async () => {
+      await this.consumer.connect()
+      await this.consumer.subscribe({ topic: TOPICS.chainEvents, fromBeginning: true })
+      await this.consumer.run({
+        eachMessage: async ({ message }) => this.handle(message),
+      })
     })
     this.logger.log('consuming chain.events')
   }
 
   async onApplicationShutdown(): Promise<void> {
     await this.consumer.disconnect()
+    await this.producer.disconnect()
     await this.db.destroy()
   }
 
@@ -86,6 +100,25 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
         await this.applyAuctionCancelled(event)
         break
     }
+
+    // Emitted after the read model commit so downstream consumers (cache
+    // invalidation, notifications) always read the projected state.
+    await this.producer.send({
+      topic: TOPICS.auctionProjected,
+      messages: [
+        {
+          key: event.auctionId,
+          value: JSON.stringify(
+            auctionProjectedSchema.parse({
+              type: event.type,
+              contractAddress: event.contractAddress,
+              auctionId: event.auctionId,
+              blockNumber: event.blockNumber,
+            }),
+          ),
+        },
+      ],
+    })
     this.logger.log(`${event.type} auction=${event.auctionId} block=${event.blockNumber}`)
   }
 

@@ -2,8 +2,10 @@ packages:
   - 'apps/*'
   - 'contracts'
   - 'packages/*'
-# esbuild ships a prebuilt binary; tsx depends on it.
+# esbuild ships a prebuilt binary; tsx depends on it. The protobufjs
+# postinstall only patches its own package.json — safe to skip.
 allowBuilds:
+  '@apollo/protobufjs': false
   esbuild: true
 minimumReleaseAgeExclude:
   - '@typescript-eslint/eslint-plugin@8.66.0'

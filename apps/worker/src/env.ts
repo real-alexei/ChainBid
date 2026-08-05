@@ -3,12 +3,14 @@ export const ENV = Symbol('ENV')
 export interface Env {
   databaseUrl: string
   kafkaBrokers: string[]
+  redisUrl: string
 }
 
 export function loadEnv(): Env {
   return {
     databaseUrl: required('DATABASE_URL'),
     kafkaBrokers: required('KAFKA_BROKERS').split(','),
+    redisUrl: required('REDIS_URL'),
   }
 }
 

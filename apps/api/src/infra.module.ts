@@ -4,6 +4,7 @@ import { createClient } from 'redis'
 import { ENV, loadEnv, type Env } from './env.js'
 
 export const REDIS = Symbol('REDIS')
+export const REDIS_SUB = Symbol('REDIS_SUB')
 export const DB = Symbol('DB')
 
 export type RedisClient = ReturnType<typeof createClient>
@@ -22,11 +23,22 @@ export type RedisClient = ReturnType<typeof createClient>
       },
     },
     {
+      // A Redis connection in subscriber mode cannot run regular commands,
+      // so the pub/sub listener gets its own connection.
+      provide: REDIS_SUB,
+      inject: [ENV],
+      useFactory: async (env: Env) => {
+        const client = createClient({ url: env.redisUrl })
+        await client.connect()
+        return client
+      },
+    },
+    {
       provide: DB,
       inject: [ENV],
       useFactory: (env: Env) => createDb(env.databaseUrl),
     },
   ],
-  exports: [ENV, REDIS, DB],
+  exports: [ENV, REDIS, REDIS_SUB, DB],
 })
 export class InfraModule {}

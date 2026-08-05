@@ -1,6 +1,7 @@
 import type { AuctionStatus } from '@chainbid/db'
+import type { AuctionSnapshot } from '@chainbid/shared'
 import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common'
-import { AuctionsService, type AuctionDto, type BidDto } from './auctions.service.js'
+import { AuctionsService, type BidDto } from './auctions.service.js'
 
 const AUCTION_STATUSES = ['created', 'live', 'settled', 'cancelled'] as const
 
@@ -9,7 +10,7 @@ export class AuctionsController {
   constructor(private readonly auctions: AuctionsService) {}
 
   @Get()
-  list(@Query('status') status?: string): Promise<AuctionDto[]> {
+  list(@Query('status') status?: string): Promise<AuctionSnapshot[]> {
     if (status === undefined) return this.auctions.list()
     if (!isAuctionStatus(status)) {
       throw new BadRequestException(`status must be one of: ${AUCTION_STATUSES.join(', ')}`)
@@ -18,7 +19,7 @@ export class AuctionsController {
   }
 
   @Get(':id')
-  byId(@Param('id') id: string): Promise<AuctionDto> {
+  byId(@Param('id') id: string): Promise<AuctionSnapshot> {
     return this.auctions.byId(parseAuctionId(id))
   }
 
