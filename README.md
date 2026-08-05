@@ -6,6 +6,8 @@ read models: **Solidity → indexer → Kafka → projections → REST/GraphQL/W
 The interesting part is not the auction — it is the pipeline that keeps a Postgres read model
 correct in the face of reorgs, restarts, and out-of-order events.
 
+![ChainBid auction list, with live and settled auctions projected from chain events](chainbid.png)
+
 ```mermaid
 flowchart LR
     W[Wallet / SPA] -->|SIWE + REST/GraphQL/WS| API[api]
