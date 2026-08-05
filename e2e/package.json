@@ -1,0 +1,16 @@
+{
+  "name": "@chainbid/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "tsx run.mts"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0",
+    "siwe": "^3.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.5"
+  }
+}

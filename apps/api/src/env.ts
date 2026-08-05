@@ -3,6 +3,7 @@ export const ENV = Symbol('ENV')
 export interface Env {
   databaseUrl: string
   redisUrl: string
+  rpcUrl: string
   apiPort: number
   chainId: number
   jwtSecret: string
@@ -13,6 +14,7 @@ export function loadEnv(): Env {
   return {
     databaseUrl: required('DATABASE_URL'),
     redisUrl: required('REDIS_URL'),
+    rpcUrl: required('RPC_URL'),
     apiPort: Number(process.env['API_PORT'] ?? '3000'),
     chainId: Number(required('CHAIN_ID')),
     jwtSecret: required('JWT_SECRET'),

@@ -1,4 +1,5 @@
 export { createDb, type Db } from './client.js'
+export { sql } from 'kysely'
 export { createMigrator, migrateToLatest } from './migrate.js'
 export * from './rows.js'
 export * from './schema.js'

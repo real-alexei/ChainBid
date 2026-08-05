@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'contracts'
+  - 'e2e'
   - 'packages/*'
 # esbuild ships a prebuilt binary; tsx depends on it. The protobufjs
 # postinstall only patches its own package.json — safe to skip.

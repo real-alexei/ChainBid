@@ -66,3 +66,50 @@ jobs:
 
       - name: Fail if the generated types drifted from the migrations
         run: git diff --exit-code -- packages/db/src/schema.ts
+
+  # Boots the whole stack — compose infra, a hardhat node, the three services —
+  # and drives a real auction through it: mint, three bids, auto-settlement,
+  # asserted over REST, GraphQL, and a captured WS stream (e2e/run.mts).
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: cp .env.example .env
+
+      - run: docker compose up -d --wait
+
+      - run: pnpm -r build
+
+      - name: Start hardhat node and deploy contracts
+        run: |
+          (cd contracts && nohup pnpm exec hardhat node > /tmp/hardhat.log 2>&1 &)
+          for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:8545 && break; sleep 1; done
+          printf 'y\n' | pnpm --filter @chainbid/contracts exec hardhat ignition deploy ignition/modules/ChainBid.ts --network localhost
+
+      - name: Migrate database
+        run: |
+          set -a && source .env && set +a
+          pnpm --filter @chainbid/db migrate
+
+      - name: Start api, indexer, and worker
+        run: |
+          (cd apps/indexer && nohup node dist/main.js > /tmp/indexer.log 2>&1 &)
+          (cd apps/worker && nohup node dist/main.js > /tmp/worker.log 2>&1 &)
+          (cd apps/api && nohup node dist/main.js > /tmp/api.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/health > /dev/null && break; sleep 1; done
+
+      - run: pnpm --filter @chainbid/e2e e2e
+
+      - name: Dump service logs
+        if: failure()
+        run: tail -n 100 /tmp/hardhat.log /tmp/indexer.log /tmp/worker.log /tmp/api.log

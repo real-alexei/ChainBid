@@ -1,11 +1,13 @@
 import { createDb } from '@chainbid/db'
 import { Global, Module } from '@nestjs/common'
+import { JsonRpcProvider } from 'ethers'
 import { createClient } from 'redis'
 import { ENV, loadEnv, type Env } from './env.js'
 
 export const REDIS = Symbol('REDIS')
 export const REDIS_SUB = Symbol('REDIS_SUB')
 export const DB = Symbol('DB')
+export const RPC = Symbol('RPC')
 
 export type RedisClient = ReturnType<typeof createClient>
 
@@ -38,7 +40,13 @@ export type RedisClient = ReturnType<typeof createClient>
       inject: [ENV],
       useFactory: (env: Env) => createDb(env.databaseUrl),
     },
+    {
+      // Only health and metrics talk to the chain from the api.
+      provide: RPC,
+      inject: [ENV],
+      useFactory: (env: Env) => new JsonRpcProvider(env.rpcUrl),
+    },
   ],
-  exports: [ENV, REDIS, REDIS_SUB, DB],
+  exports: [ENV, REDIS, REDIS_SUB, DB, RPC],
 })
 export class InfraModule {}
