@@ -10,6 +10,9 @@ export const NFT_ABI = parseAbi([
 export const AUCTION_ABI = parseAbi([
   'function createAuction(address nft, uint256 tokenId, uint256 reservePrice, uint64 duration) returns (uint256)',
   'function bid(uint256 auctionId) payable',
+  // The contract enforces a minimum increment over the standing bid; ask it for the
+  // floor rather than reimplementing the rule here and drifting out of sync.
+  'function minimumBid(uint256 auctionId) view returns (uint256)',
   'function pendingReturns(address bidder) view returns (uint256)',
   'function withdraw()',
   ...ENGLISH_AUCTION_EVENTS,

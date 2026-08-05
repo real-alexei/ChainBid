@@ -5,6 +5,9 @@ import { useConnection, usePublicClient, useWriteContract } from 'wagmi'
 import { AUCTION_ABI, NFT_ABI } from '../abi'
 import { AUCTION_ADDRESS, NFT_ADDRESS } from '../config'
 
+/// Mirrors `EnglishAuction.MIN_DURATION`, which is pinned to the extension window.
+const MIN_DURATION_MINUTES = 5
+
 export function SellPage() {
   const { address, isConnected } = useConnection()
   const publicClient = usePublicClient()
@@ -100,9 +103,16 @@ export function SellPage() {
         <span className="text-zinc-400">Duration (minutes)</span>
         <input
           value={minutes}
+          type="number"
+          min={MIN_DURATION_MINUTES}
           onChange={(e) => setMinutes(e.target.value)}
           className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
         />
+        {/* Anything shorter would be extended by its own first bid, so the contract
+            refuses it outright. */}
+        <span className="mt-1 block text-xs text-zinc-500">
+          At least {MIN_DURATION_MINUTES} minutes.
+        </span>
       </label>
 
       <button

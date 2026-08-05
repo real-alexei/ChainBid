@@ -68,17 +68,35 @@ contract EnglishAuctionTest is Test {
         house.bid{ value: 0.5 ether }(auctionId);
     }
 
-    function test_BidMustBeatCurrentHigh() public {
+    function test_BidMustBeatCurrentHighByTheIncrement() public {
         uint256 auctionId = _open();
 
         vm.prank(alice);
         house.bid{ value: 2 ether }(auctionId);
 
+        // Matching the standing bid is not enough, and neither is edging past it:
+        // the floor is +5%.
+        assertEq(house.minimumBid(auctionId), 2.1 ether);
+
         vm.prank(bob);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.BidNotHighEnough.selector, 2 ether, 2 ether)
+            abi.encodeWithSelector(EnglishAuction.BidNotHighEnough.selector, 2 ether, 2.1 ether)
         );
         house.bid{ value: 2 ether }(auctionId);
+
+        vm.prank(bob);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnglishAuction.BidNotHighEnough.selector,
+                2 ether + 1,
+                2.1 ether
+            )
+        );
+        house.bid{ value: 2 ether + 1 }(auctionId);
+
+        vm.prank(bob);
+        house.bid{ value: 2.1 ether }(auctionId);
+        assertEq(house.getAuction(auctionId).highestBidder, bob);
     }
 
     function test_BidAfterEndReverts() public {
@@ -235,10 +253,15 @@ contract EnglishAuctionTest is Test {
 
     // --- invariants ---
 
-    /// @dev Escrowed ETH must always cover everything the contract owes.
-    function testFuzz_ContractHoldsEnoughToCoverWhatItOwes(uint96 first, uint96 second) public {
+    /// @dev Every wei the contract holds must be spoken for — not merely covered.
+    ///      The weaker `>=` form passes even when ETH has been orphaned, which is
+    ///      exactly the shape of the cancelled-auction bug.
+    function testFuzz_EveryWeiHeldIsClaimableBySomeone(uint96 first, uint96 second) public {
         vm.assume(first >= RESERVE);
-        vm.assume(second > first);
+        // The second bid has to clear the 5% increment to be accepted at all.
+        uint256 floorBid = uint256(first) + (uint256(first) * 500) / 10_000;
+        vm.assume(second >= floorBid);
+
         vm.deal(alice, uint256(first) + 1 ether);
         vm.deal(bob, uint256(second) + 1 ether);
 
@@ -249,6 +272,145 @@ contract EnglishAuctionTest is Test {
         vm.prank(bob);
         house.bid{ value: second }(auctionId);
 
-        assertGe(address(house).balance, house.pendingReturns(alice) + house.getAuction(auctionId).highestBid);
+        assertEq(
+            address(house).balance,
+            house.pendingReturns(alice) + house.getAuction(auctionId).highestBid,
+            "contract holds ETH nobody can claim"
+        );
+    }
+
+    // --- regressions from the security audit ---
+
+    /// @dev `cancel()` leaves `endTime` in the future, so without an explicit
+    ///      `settled` check `bid()` would accept ETH that no path could return.
+    function test_CancelledAuctionRejectsFurtherBids() public {
+        uint256 auctionId = _open();
+
+        vm.prank(seller);
+        house.cancel(auctionId);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(EnglishAuction.AuctionAlreadySettled.selector, auctionId)
+        );
+        house.bid{ value: 5 ether }(auctionId);
+
+        assertEq(address(house).balance, 0);
+    }
+
+    /// @dev A winner that cannot accept a safe transfer must not be able to wedge
+    ///      settlement: the money settles and the token becomes claimable.
+    function test_SettlementSurvivesAWinnerThatCannotReceiveTheToken() public {
+        uint256 auctionId = _open();
+
+        NonReceiver winner = new NonReceiver();
+        vm.deal(address(winner), 10 ether);
+        winner.placeBid{ value: 2 ether }(house, auctionId);
+
+        vm.warp(house.getAuction(auctionId).endTime);
+
+        vm.expectEmit(true, true, false, false);
+        emit EnglishAuction.NftDeliveryFailed(auctionId, address(winner));
+        house.settle(auctionId);
+
+        // The seller is paid even though delivery failed.
+        assertEq(house.pendingReturns(seller), 2 ether);
+        assertTrue(house.getAuction(auctionId).settled);
+        assertEq(house.nftClaimant(auctionId), address(winner));
+
+        // And the winner pulls the token with a plain transfer.
+        winner.claim(house, auctionId);
+        assertEq(nft.ownerOf(tokenId), address(winner));
+        assertEq(house.nftClaimant(auctionId), address(0));
+    }
+
+    function test_ClaimNftRejectsStrangers() public {
+        uint256 auctionId = _open();
+        NonReceiver winner = new NonReceiver();
+        vm.deal(address(winner), 10 ether);
+        winner.placeBid{ value: 2 ether }(house, auctionId);
+
+        vm.warp(house.getAuction(auctionId).endTime);
+        house.settle(auctionId);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnglishAuction.NotClaimant.selector,
+                alice,
+                address(winner)
+            )
+        );
+        house.claimNft(auctionId);
+    }
+
+    function test_ClaimNftWithNothingOwedReverts() public {
+        uint256 auctionId = _open();
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(EnglishAuction.NothingToClaim.selector, auctionId)
+        );
+        house.claimNft(auctionId);
+    }
+
+    /// @dev With `highestBid` as the sentinel, zero-value bids overwrote each other
+    ///      and the last one won the token for nothing.
+    function test_ZeroValueBidsAreRejectedEvenWithoutAReserve() public {
+        vm.startPrank(seller);
+        uint256 secondToken = nft.safeMint(seller, "ipfs://chainbid/2");
+        nft.approve(address(house), secondToken);
+        uint256 auctionId = house.createAuction(address(nft), secondToken, 0, DURATION);
+        vm.stopPrank();
+
+        assertEq(house.minimumBid(auctionId), 1);
+
+        vm.prank(alice);
+        vm.expectRevert(EnglishAuction.ZeroBid.selector);
+        house.bid{ value: 0 }(auctionId);
+
+        // A one-wei bid is legitimate on a no-reserve auction, but it now sets a
+        // real floor that the next bidder has to clear.
+        vm.prank(alice);
+        house.bid{ value: 1 }(auctionId);
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.BidNotHighEnough.selector, 1, 2));
+        house.bid{ value: 1 }(auctionId);
+    }
+
+    /// @dev A token contract whose transfers are no-ops must not be auctionable.
+    function test_CreateRejectsATokenThatDoesNotActuallyEscrow() public {
+        FakeNFT fake = new FakeNFT();
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.EscrowFailed.selector, address(fake), 1));
+        house.createAuction(address(fake), 1, 1 ether, DURATION);
+    }
+
+    function test_DurationShorterThanTheExtensionWindowIsRejected() public {
+        vm.prank(seller);
+        vm.expectRevert(
+            abi.encodeWithSelector(EnglishAuction.InvalidDuration.selector, uint64(4 minutes))
+        );
+        house.createAuction(address(nft), tokenId, RESERVE, 4 minutes);
+    }
+}
+
+/// A contract bidder with no `onERC721Received`, so a safe transfer to it reverts.
+contract NonReceiver {
+    function placeBid(EnglishAuction house, uint256 auctionId) external payable {
+        house.bid{ value: msg.value }(auctionId);
+    }
+
+    function claim(EnglishAuction house, uint256 auctionId) external {
+        house.claimNft(auctionId);
+    }
+}
+
+/// An "ERC-721" whose transfers are no-ops and which reports someone else as owner.
+contract FakeNFT {
+    function safeTransferFrom(address, address, uint256) external {}
+
+    function ownerOf(uint256) external pure returns (address) {
+        return address(0xBEEF);
     }
 }
