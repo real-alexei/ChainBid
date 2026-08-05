@@ -4,7 +4,15 @@ import { useState } from 'react'
 import { formatEther, parseEther } from 'viem'
 import { useConnection, useReadContract, useSignMessage, useWriteContract } from 'wagmi'
 import { AUCTION_ABI } from '../abi'
-import { getAuctionWithBids, getToken, siweLogin, unwatchAuction, watchAuction } from '../api'
+import {
+  getAuctionWithBids,
+  getToken,
+  getWatchlist,
+  siweLogin,
+  unwatchAuction,
+  watchAuction,
+} from '../api'
+import { CHAIN_ID } from '../config'
 import { Countdown } from '../components/Countdown'
 import { StatusBadge } from '../components/StatusBadge'
 import { eth, shortAddress } from '../format'
@@ -17,6 +25,8 @@ export function AuctionPage() {
     from: '/auction/$contractAddress/$auctionId',
   })
   const auctionContract = contractAddress as `0x${string}`
+  // BigInt(auctionId) throws on garbage, and the URL is user input.
+  const validAuctionId = /^\d+$/.test(auctionId)
   const queryClient = useQueryClient()
   const { address, isConnected } = useConnection()
   const signMessage = useSignMessage()
@@ -25,12 +35,32 @@ export function AuctionPage() {
   const [amount, setAmount] = useState('')
   const [feed, setFeed] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [watching, setWatching] = useState(false)
+  // Keyed by auction because the router reuses this component across
+  // param-only navigations — a bare boolean would leak to the next auction.
+  const watchKey = `${contractAddress.toLowerCase()}/${auctionId}`
+  const [watchOverride, setWatchOverride] = useState<{ key: string; watching: boolean } | null>(
+    null,
+  )
 
-  const { data: auction } = useQuery({
+  const { data: auction, error: loadError } = useQuery({
     queryKey: ['auction', contractAddress, auctionId],
     queryFn: () => getAuctionWithBids(contractAddress, auctionId),
+    enabled: validAuctionId,
   })
+
+  const { data: watchlist } = useQuery({
+    queryKey: ['watchlist'],
+    queryFn: getWatchlist,
+    enabled: isConnected && getToken() !== null,
+  })
+  const watching =
+    watchOverride?.key === watchKey
+      ? watchOverride.watching
+      : (watchlist?.some(
+          (a) =>
+            a.contractAddress.toLowerCase() === contractAddress.toLowerCase() &&
+            a.auctionId === auctionId,
+        ) ?? false)
 
   // A bid has to clear the standing one by the contract's increment, so read the
   // floor from the chain instead of guessing and letting the wallet eat a revert.
@@ -38,7 +68,8 @@ export function AuctionPage() {
     address: auctionContract,
     abi: AUCTION_ABI,
     functionName: 'minimumBid',
-    args: [BigInt(auctionId)],
+    args: [validAuctionId ? BigInt(auctionId) : 0n],
+    query: { enabled: validAuctionId },
   })
 
   // Chain → indexer → Kafka → projection → pub/sub → here, in about a second.
@@ -49,7 +80,11 @@ export function AuctionPage() {
     void refetchFloorBid()
   })
 
+  if (!validAuctionId) return <p className="text-zinc-400">Invalid auction id.</p>
+  if (loadError !== null)
+    return <p className="text-red-400">Failed to load auction: {loadError.message}</p>
   if (auction === undefined) return <p className="text-zinc-400">Loading…</p>
+  if (auction === null) return <p className="text-zinc-400">Auction not found.</p>
 
   const placeBid = async () => {
     setError(null)
@@ -60,6 +95,7 @@ export function AuctionPage() {
         functionName: 'bid',
         args: [BigInt(auctionId)],
         value: parseEther(amount),
+        chainId: CHAIN_ID,
       })
       setAmount('')
       void refetchFloorBid()
@@ -76,6 +112,7 @@ export function AuctionPage() {
         abi: AUCTION_ABI,
         functionName: 'claimNft',
         args: [BigInt(auctionId)],
+        chainId: CHAIN_ID,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message.split('\n')[0]! : String(err))
@@ -92,7 +129,8 @@ export function AuctionPage() {
       await (watching
         ? unwatchAuction(contractAddress, auctionId)
         : watchAuction(contractAddress, auctionId))
-      setWatching(!watching)
+      setWatchOverride({ key: watchKey, watching: !watching })
+      void queryClient.invalidateQueries({ queryKey: ['watchlist'] })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }

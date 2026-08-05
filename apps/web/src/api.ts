@@ -48,7 +48,7 @@ export async function graphql<T>(query: string): Promise<T> {
 }
 
 export const getAuctionWithBids = (contractAddress: string, id: string) =>
-  graphql<{ auction: AuctionSnapshot & { bids: Bid[] } }>(
+  graphql<{ auction: (AuctionSnapshot & { bids: Bid[] }) | null }>(
     `{ auction(contractAddress: "${contractAddress}", auctionId: "${id}") {
         auctionId contractAddress nftContractAddress tokenId seller
         reservePrice currentBid currentBidder winner status nftDelivery nftClaimant

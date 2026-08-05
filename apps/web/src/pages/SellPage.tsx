@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { parseEther, parseEventLogs } from 'viem'
 import { useConnection, usePublicClient, useWriteContract } from 'wagmi'
 import { AUCTION_ABI, NFT_ABI } from '../abi'
-import { AUCTION_ADDRESS, NFT_ADDRESS } from '../config'
+import { AUCTION_ADDRESS, CHAIN_ID, NFT_ADDRESS } from '../config'
 
 /// Mirrors `EnglishAuction.MIN_DURATION`, which is pinned to the extension window.
 const MIN_DURATION_MINUTES = 5
@@ -33,6 +33,7 @@ export function SellPage() {
         abi: NFT_ABI,
         functionName: 'safeMint',
         args: [address, uri],
+        chainId: CHAIN_ID,
       })
       const mintReceipt = await publicClient.waitForTransactionReceipt({ hash: mintHash })
       const [minted] = parseEventLogs({
@@ -49,6 +50,7 @@ export function SellPage() {
         abi: NFT_ABI,
         functionName: 'approve',
         args: [AUCTION_ADDRESS, tokenId],
+        chainId: CHAIN_ID,
       })
       await publicClient.waitForTransactionReceipt({ hash: approveHash })
 
@@ -58,6 +60,7 @@ export function SellPage() {
         abi: AUCTION_ABI,
         functionName: 'createAuction',
         args: [NFT_ADDRESS, tokenId, parseEther(reserve), BigInt(Number(minutes) * 60)],
+        chainId: CHAIN_ID,
       })
       const receipt = await publicClient.waitForTransactionReceipt({ hash: createHash })
       const [created] = parseEventLogs({

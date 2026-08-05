@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from '@tanstack/react-router'
 import { ConnectButton } from './components/ConnectButton'
+import { NetworkBanner } from './components/NetworkBanner'
 import { AuctionPage } from './pages/AuctionPage'
 import { ListPage } from './pages/ListPage'
 import { MePage } from './pages/MePage'
@@ -29,6 +30,7 @@ function Layout() {
           </div>
         </div>
       </header>
+      <NetworkBanner />
       <main className="mx-auto max-w-4xl px-4 py-6">
         <Outlet />
       </main>

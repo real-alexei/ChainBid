@@ -1,19 +1,27 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useConnection, useReadContract, useSignMessage, useWriteContract } from 'wagmi'
+import {
+  useConnection,
+  usePublicClient,
+  useReadContract,
+  useSignMessage,
+  useWriteContract,
+} from 'wagmi'
 import { AUCTION_ABI } from '../abi'
 import { getToken, getWatchlist, siweLogin } from '../api'
-import { AUCTION_ADDRESS } from '../config'
+import { AUCTION_ADDRESS, CHAIN_ID } from '../config'
 import { StatusBadge } from '../components/StatusBadge'
 import { eth } from '../format'
 
 export function MePage() {
   const { address, isConnected } = useConnection()
+  const publicClient = usePublicClient()
   const signMessage = useSignMessage()
   const writeContract = useWriteContract()
   const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
 
   const loggedIn = getToken() !== null
 
@@ -48,16 +56,24 @@ export function MePage() {
   }
 
   const withdraw = async () => {
+    if (publicClient === undefined) return
     setError(null)
+    setWithdrawing(true)
     try {
-      await writeContract.mutateAsync({
+      const hash = await writeContract.mutateAsync({
         address: AUCTION_ADDRESS,
         abi: AUCTION_ABI,
         functionName: 'withdraw',
+        chainId: CHAIN_ID,
       })
+      // pendingReturns has no websocket path, so refetching before the
+      // transaction mines would just read the old balance back.
+      await publicClient.waitForTransactionReceipt({ hash })
       void refetchPending()
     } catch (err) {
       setError(err instanceof Error ? err.message.split('\n')[0]! : String(err))
+    } finally {
+      setWithdrawing(false)
     }
   }
 
@@ -75,9 +91,10 @@ export function MePage() {
           {pending !== undefined && pending > 0n && (
             <button
               onClick={() => void withdraw()}
-              className="rounded bg-emerald-500 px-3 py-1 text-sm font-medium text-zinc-950 hover:bg-emerald-400"
+              disabled={withdrawing}
+              className="rounded bg-emerald-500 px-3 py-1 text-sm font-medium text-zinc-950 hover:bg-emerald-400 disabled:opacity-40"
             >
-              Withdraw
+              {withdrawing ? 'Withdrawing…' : 'Withdraw'}
             </button>
           )}
         </div>
