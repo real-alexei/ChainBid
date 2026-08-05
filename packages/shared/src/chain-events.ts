@@ -61,8 +61,29 @@ export const chainEventSchema = z.discriminatedUnion('type', [
   auctionCancelledSchema,
 ])
 
+// Not an on-chain event: the indexer publishes this before replaying a range
+// after a reorg. fromBlock is the last block still trusted — consumers must
+// discard everything they projected above it, because an orphaned event may
+// have no canonical replacement and replay alone cannot remove it.
+export const chainReorgSchema = z.object({
+  type: z.literal('ChainReorg'),
+  contractAddress: address,
+  fromBlock: z.number().int().nonnegative(),
+})
+
+/** Everything that travels on chain.events: auction events plus the reorg marker. */
+export const chainMessageSchema = z.discriminatedUnion('type', [
+  auctionCreatedSchema,
+  bidPlacedSchema,
+  auctionSettledSchema,
+  auctionCancelledSchema,
+  chainReorgSchema,
+])
+
 export type AuctionCreatedEvent = z.infer<typeof auctionCreatedSchema>
 export type BidPlacedEvent = z.infer<typeof bidPlacedSchema>
 export type AuctionSettledEvent = z.infer<typeof auctionSettledSchema>
 export type AuctionCancelledEvent = z.infer<typeof auctionCancelledSchema>
 export type ChainEvent = z.infer<typeof chainEventSchema>
+export type ChainReorgEvent = z.infer<typeof chainReorgSchema>
+export type ChainMessage = z.infer<typeof chainMessageSchema>

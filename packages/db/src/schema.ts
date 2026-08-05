@@ -33,6 +33,7 @@ export interface Auctions {
   auction_id: Numeric;
   contract_address: string;
   created_at: Generated<Timestamp>;
+  created_block: Generated<Int8>;
   current_bid: Numeric | null;
   current_bidder_address: string | null;
   end_time: Timestamp;

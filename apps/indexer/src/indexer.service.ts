@@ -1,5 +1,11 @@
 import type { Db } from '@chainbid/db'
-import { chainEventSchema, ENGLISH_AUCTION_EVENTS, TOPICS, type ChainEvent } from '@chainbid/shared'
+import {
+  chainEventSchema,
+  chainReorgSchema,
+  ENGLISH_AUCTION_EVENTS,
+  TOPICS,
+  type ChainEvent,
+} from '@chainbid/shared'
 import {
   Inject,
   Injectable,
@@ -78,8 +84,8 @@ export class IndexerService implements OnApplicationBootstrap, OnApplicationShut
 
     // Reorg check: the block we last processed must still be on the canonical
     // chain. With a confirmation depth this fires only on reorgs deeper than
-    // that depth; rewinding re-emits the range and consumers converge because
-    // every projection is idempotent.
+    // that depth. Rewinding publishes a ChainReorg marker (consumers roll back
+    // everything above the fork point) and then re-emits the range.
     if (cursor !== null) {
       const stored = await this.provider.getBlock(cursor.blockNumber)
       if (stored === null || stored.hash !== cursor.blockHash) {
@@ -208,6 +214,25 @@ export class IndexerService implements OnApplicationBootstrap, OnApplicationShut
     if (block === null || block.hash === null) {
       throw new Error(`cannot rewind: block ${rewound} not available`)
     }
+    // The marker rides the same topic as the events, so consumers see it
+    // after the orphaned range and before the canonical replay. Published
+    // before the cursor moves: a crash in between repeats the rewind, and a
+    // duplicate marker is harmless because the replay follows it again.
+    await this.producer.send({
+      topic: TOPICS.chainEvents,
+      messages: [
+        {
+          key: this.env.auctionAddress,
+          value: JSON.stringify(
+            chainReorgSchema.parse({
+              type: 'ChainReorg',
+              contractAddress: this.env.auctionAddress,
+              fromBlock: rewound,
+            }),
+          ),
+        },
+      ],
+    })
     await this.saveCursor(rewound, block.hash)
     this.logger.warn(`reorg at block ${cursor.blockNumber}, cursor rewound to ${rewound}`)
   }

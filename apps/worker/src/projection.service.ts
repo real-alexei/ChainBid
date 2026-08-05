@@ -1,12 +1,13 @@
 import type { Db } from '@chainbid/db'
 import {
   auctionProjectedSchema,
-  chainEventSchema,
+  chainMessageSchema,
   TOPICS,
   type AuctionCancelledEvent,
   type AuctionCreatedEvent,
   type AuctionSettledEvent,
   type BidPlacedEvent,
+  type ChainReorgEvent,
 } from '@chainbid/shared'
 import {
   Inject,
@@ -81,13 +82,23 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
       this.logger.error('dropping message with invalid JSON')
       return
     }
-    const parsed = chainEventSchema.safeParse(json)
+    const parsed = chainMessageSchema.safeParse(json)
     if (!parsed.success) {
       this.logger.error(`dropping invalid event: ${parsed.error.message}`)
       return
     }
 
     const event = parsed.data
+    // The reorg marker arrives after the orphaned events and before their
+    // canonical replay, so rolling back here and letting the replay rebuild
+    // is race-free. No auction.projected follows: the replayed events emit
+    // their own as they land.
+    if (event.type === 'ChainReorg') {
+      await this.applyChainReorg(event)
+      this.logger.warn(`ChainReorg: rolled back rows above block ${event.fromBlock}`)
+      return
+    }
+
     switch (event.type) {
       case 'AuctionCreated':
         await this.applyAuctionCreated(event)
@@ -138,9 +149,66 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
         end_time: new Date(event.endTime * 1000),
         status: 'live',
         last_event_block: event.blockNumber,
+        created_block: event.blockNumber,
       })
       .onConflict((oc) => oc.columns(['contract_address', 'auction_id']).doNothing())
       .execute()
+  }
+
+  private async applyChainReorg(event: ChainReorgEvent): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .deleteFrom('bids')
+        .where('contract_address', '=', event.contractAddress)
+        .where('block_number', '>', String(event.fromBlock))
+        .execute()
+
+      // Auctions born above the fork point are dropped wholesale: if the
+      // creation is canonical too, the replay re-inserts them.
+      await trx
+        .deleteFrom('auctions')
+        .where('contract_address', '=', event.contractAddress)
+        .where('created_block', '>', String(event.fromBlock))
+        .execute()
+
+      // Auctions merely touched above the fork point revert to what the
+      // surviving bids say and lower their guard so replayed events at lower
+      // block numbers apply again. end_time keeps a possibly-orphaned bid
+      // extension — recovering it would mean storing it per bid; canonical
+      // replayed bids re-set it.
+      const touched = await trx
+        .selectFrom('auctions')
+        .select(['auction_id'])
+        .where('contract_address', '=', event.contractAddress)
+        .where('last_event_block', '>', String(event.fromBlock))
+        .execute()
+
+      for (const { auction_id } of touched) {
+        const lastBid = await trx
+          .selectFrom('bids')
+          .select(['amount', 'bidder_address'])
+          .where('contract_address', '=', event.contractAddress)
+          .where('auction_id', '=', auction_id)
+          .orderBy('block_number', 'desc')
+          .orderBy('log_index', 'desc')
+          .limit(1)
+          .executeTakeFirst()
+
+        await trx
+          .updateTable('auctions')
+          .set({
+            status: 'live',
+            winner_address: null,
+            current_bid: lastBid?.amount ?? null,
+            current_bidder_address: lastBid?.bidder_address ?? null,
+            last_event_block: event.fromBlock,
+            updated_at: new Date(),
+          })
+          .where('contract_address', '=', event.contractAddress)
+          .where('auction_id', '=', auction_id)
+          .execute()
+      }
+    })
   }
 
   private async applyBidPlaced(event: BidPlacedEvent): Promise<void> {
