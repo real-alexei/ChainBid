@@ -133,7 +133,7 @@ const gql = await graphql<{
   `{ auction(contractAddress: "${auctionContract}", auctionId: "${auctionId}") { currentBid status bids { amount bidder } } }`,
 )
 assert.equal(gql.auction.currentBid, highBid)
-assert.equal(gql.auction.status, 'LIVE')
+assert.equal(gql.auction.status, 'live')
 assert.equal(gql.auction.bids.length, 3)
 assert.equal(gql.auction.bids[0]?.bidder, highBidder)
 console.log('GraphQL: matches REST')

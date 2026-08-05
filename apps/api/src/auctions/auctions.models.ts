@@ -3,14 +3,25 @@ import { Field, Int, ObjectType, registerEnumType } from '@nestjs/graphql'
 // GraphQL shapes for the auction read model. Wei amounts are strings — they
 // exceed both GraphQL Int and JS number range.
 
+// Enum value names are deliberately lowercase: GraphQL serializes an enum to
+// its value's NAME, and REST and the WS feed both send the snapshot's
+// lowercase strings — uppercase names here would make the same auction read
+// "LIVE" over GraphQL and "live" everywhere else.
 export const AuctionStatusGql = {
-  CREATED: 'created',
-  LIVE: 'live',
-  SETTLED: 'settled',
-  CANCELLED: 'cancelled',
+  created: 'created',
+  live: 'live',
+  settled: 'settled',
+  cancelled: 'cancelled',
 } as const
 
 registerEnumType(AuctionStatusGql, { name: 'AuctionStatus' })
+
+export const NftDeliveryGql = {
+  pending_claim: 'pending_claim',
+  claimed: 'claimed',
+} as const
+
+registerEnumType(NftDeliveryGql, { name: 'NftDelivery' })
 
 @ObjectType('Auction')
 export class AuctionModel {
@@ -44,10 +55,7 @@ export class AuctionModel {
   @Field(() => AuctionStatusGql)
   status!: string
 
-  // A plain string, not a registered enum: GraphQL serializes enum values to
-  // their UPPERCASE names, and every other consumer sees the snapshot's
-  // lowercase values.
-  @Field(() => String, { nullable: true })
+  @Field(() => NftDeliveryGql, { nullable: true })
   nftDelivery!: string | null
 
   @Field(() => String, { nullable: true })
