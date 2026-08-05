@@ -1,4 +1,4 @@
-import type { Db } from '@chainbid/db'
+import { sql, type Db } from '@chainbid/db'
 import {
   auctionProjectedSchema,
   chainMessageSchema,
@@ -136,23 +136,43 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
   }
 
   private async applyAuctionCreated(event: AuctionCreatedEvent): Promise<void> {
-    await this.db
-      .insertInto('auctions')
-      .values({
-        contract_address: event.contractAddress,
-        auction_id: event.auctionId,
-        nft_contract_address: event.nft,
-        token_id: event.tokenId,
-        seller_address: event.seller,
-        reserve_price: event.reservePrice,
-        start_time: new Date(event.startTime * 1000),
-        end_time: new Date(event.endTime * 1000),
-        status: 'live',
-        last_event_block: event.blockNumber,
-        created_block: event.blockNumber,
-      })
-      .onConflict((oc) => oc.columns(['contract_address', 'auction_id']).doNothing())
-      .execute()
+    await this.db.transaction().execute(async (trx) => {
+      // Events for one auction can arrive in any order, so a row may already
+      // exist: a stub from Settled/Cancelled or a redelivery. On conflict only
+      // the descriptive columns are filled in — status and current_bid belong
+      // to events that happened later and must survive. end_time grows
+      // monotonically (anti-snipe extensions), hence GREATEST.
+      await trx
+        .insertInto('auctions')
+        .values({
+          contract_address: event.contractAddress,
+          auction_id: event.auctionId,
+          nft_contract_address: event.nft,
+          token_id: event.tokenId,
+          seller_address: event.seller,
+          reserve_price: event.reservePrice,
+          start_time: new Date(event.startTime * 1000),
+          end_time: new Date(event.endTime * 1000),
+          status: 'live',
+          last_event_block: event.blockNumber,
+          created_block: event.blockNumber,
+        })
+        .onConflict((oc) =>
+          oc.columns(['contract_address', 'auction_id']).doUpdateSet({
+            nft_contract_address: event.nft,
+            token_id: event.tokenId,
+            seller_address: event.seller,
+            reserve_price: event.reservePrice,
+            start_time: new Date(event.startTime * 1000),
+            end_time: sql<Date>`GREATEST(auctions.end_time, ${new Date(event.endTime * 1000)})`,
+            created_block: event.blockNumber,
+          }),
+        )
+        .execute()
+
+      // Picks up bids that outran this event.
+      await this.refreshFromBids(trx, event.contractAddress, event.auctionId)
+    })
   }
 
   private async applyChainReorg(event: ChainReorgEvent): Promise<void> {
@@ -229,51 +249,117 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
         .onConflict((oc) => oc.columns(['tx_hash', 'log_index']).doNothing())
         .execute()
 
-      // last_event_block guards against an older replayed event overwriting a
-      // newer projection. The event carries endTime because a late bid may
-      // have extended the auction.
-      await trx
-        .updateTable('auctions')
-        .set({
-          current_bid: event.amount,
-          current_bidder_address: event.bidder,
-          end_time: new Date(event.endTime * 1000),
-          last_event_block: event.blockNumber,
-          updated_at: new Date(),
-        })
-        .where('contract_address', '=', event.contractAddress)
-        .where('auction_id', '=', event.auctionId)
-        .where('last_event_block', '<=', String(event.blockNumber))
-        .execute()
+      // The auction header is rebuilt from the bids table rather than from
+      // this event, so bids arriving out of order converge on the same state.
+      // The event carries endTime because a late bid may have extended the
+      // auction.
+      await this.refreshFromBids(
+        trx,
+        event.contractAddress,
+        event.auctionId,
+        new Date(event.endTime * 1000),
+      )
     })
   }
 
-  private async applyAuctionSettled(event: AuctionSettledEvent): Promise<void> {
-    await this.db
+  /**
+   * Recomputes current_bid/current_bidder from the bids table — the bid with
+   * the highest (block_number, log_index) wins regardless of arrival order.
+   * end_time and last_event_block only ever move forward, so GREATEST keeps
+   * stale events from rewinding them. A no-op when the auction row doesn't
+   * exist yet (bid outran AuctionCreated): applyAuctionCreated re-runs this
+   * once the row lands.
+   */
+  private async refreshFromBids(
+    trx: Db,
+    contractAddress: string,
+    auctionId: string,
+    endTime?: Date,
+  ): Promise<void> {
+    const lastBid = await trx
+      .selectFrom('bids')
+      .select(['amount', 'bidder_address', 'block_number'])
+      .where('contract_address', '=', contractAddress)
+      .where('auction_id', '=', auctionId)
+      .orderBy('block_number', 'desc')
+      .orderBy('log_index', 'desc')
+      .limit(1)
+      .executeTakeFirst()
+    if (!lastBid) return
+
+    await trx
       .updateTable('auctions')
       .set({
-        status: 'settled',
-        winner_address: event.winner === ZERO_ADDRESS ? null : event.winner,
-        last_event_block: event.blockNumber,
+        current_bid: lastBid.amount,
+        current_bidder_address: lastBid.bidder_address,
+        last_event_block: sql<string>`GREATEST(last_event_block, ${lastBid.block_number})`,
+        ...(endTime && { end_time: sql<Date>`GREATEST(end_time, ${endTime})` }),
         updated_at: new Date(),
       })
-      .where('contract_address', '=', event.contractAddress)
-      .where('auction_id', '=', event.auctionId)
-      .where('last_event_block', '<=', String(event.blockNumber))
+      .where('contract_address', '=', contractAddress)
+      .where('auction_id', '=', auctionId)
+      .execute()
+  }
+
+  private async applyAuctionSettled(event: AuctionSettledEvent): Promise<void> {
+    const winner = event.winner === ZERO_ADDRESS ? null : event.winner
+    await this.db
+      .insertInto('auctions')
+      .values(this.terminalStub(event, 'settled', winner))
+      .onConflict((oc) =>
+        oc
+          .columns(['contract_address', 'auction_id'])
+          .doUpdateSet({
+            status: 'settled',
+            winner_address: winner,
+            last_event_block: event.blockNumber,
+            updated_at: new Date(),
+          })
+          .where('last_event_block', '<=', String(event.blockNumber)),
+      )
       .execute()
   }
 
   private async applyAuctionCancelled(event: AuctionCancelledEvent): Promise<void> {
     await this.db
-      .updateTable('auctions')
-      .set({
-        status: 'cancelled',
-        last_event_block: event.blockNumber,
-        updated_at: new Date(),
-      })
-      .where('contract_address', '=', event.contractAddress)
-      .where('auction_id', '=', event.auctionId)
-      .where('last_event_block', '<=', String(event.blockNumber))
+      .insertInto('auctions')
+      .values(this.terminalStub(event, 'cancelled', null))
+      .onConflict((oc) =>
+        oc
+          .columns(['contract_address', 'auction_id'])
+          .doUpdateSet({
+            status: 'cancelled',
+            last_event_block: event.blockNumber,
+            updated_at: new Date(),
+          })
+          .where('last_event_block', '<=', String(event.blockNumber)),
+      )
       .execute()
+  }
+
+  /**
+   * Insert values for a Settled/Cancelled event that outran its
+   * AuctionCreated: the row pins the terminal status now, and the Created
+   * upsert fills in the placeholder descriptive columns when it arrives.
+   */
+  private terminalStub(
+    event: AuctionSettledEvent | AuctionCancelledEvent,
+    status: 'settled' | 'cancelled',
+    winner: string | null,
+  ) {
+    return {
+      contract_address: event.contractAddress,
+      auction_id: event.auctionId,
+      nft_contract_address: ZERO_ADDRESS,
+      token_id: '0',
+      seller_address: event.seller,
+      reserve_price: '0',
+      start_time: new Date(0),
+      end_time: new Date(0),
+      status,
+      winner_address: winner,
+      last_event_block: event.blockNumber,
+      created_block: event.blockNumber,
+    }
   }
 }
