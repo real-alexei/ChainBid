@@ -325,7 +325,7 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
             last_event_block: event.blockNumber,
             updated_at: new Date(),
           })
-          .where('last_event_block', '<=', String(event.blockNumber)),
+          .where('auctions.last_event_block', '<=', String(event.blockNumber)),
       )
       .execute()
   }
@@ -367,7 +367,7 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
             last_event_block: event.blockNumber,
             updated_at: new Date(),
           })
-          .where('last_event_block', '<=', String(event.blockNumber)),
+          .where('auctions.last_event_block', '<=', String(event.blockNumber)),
       )
       .execute()
   }
@@ -384,7 +384,7 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
             last_event_block: event.blockNumber,
             updated_at: new Date(),
           })
-          .where('last_event_block', '<=', String(event.blockNumber)),
+          .where('auctions.last_event_block', '<=', String(event.blockNumber)),
       )
       .execute()
   }
