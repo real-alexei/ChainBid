@@ -1,5 +1,6 @@
 import type { AuctionSnapshot } from '@chainbid/shared'
 import { Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common'
+import { parseAuctionId, parseContractAddress } from '../auctions/auctions.controller.js'
 import { AuctionsService } from '../auctions/auctions.service.js'
 import { AuthGuard, type AuthedRequest } from '../auth/auth.guard.js'
 import { WatchlistService } from './watchlist.service.js'
@@ -12,16 +13,24 @@ export class WatchlistController {
     private readonly auctions: AuctionsService,
   ) {}
 
-  @Post('auctions/:id/watch')
-  async watch(@Param('id') id: string, @Req() request: AuthedRequest): Promise<{ ok: true }> {
-    const auction = await this.auctions.byId(id)
+  @Post('auctions/:contract/:id/watch')
+  async watch(
+    @Param('contract') contract: string,
+    @Param('id') id: string,
+    @Req() request: AuthedRequest,
+  ): Promise<{ ok: true }> {
+    const auction = await this.auctions.byId(parseContractAddress(contract), parseAuctionId(id))
     await this.watchlist.watch(wallet(request), auction.contractAddress, auction.auctionId)
     return { ok: true }
   }
 
-  @Delete('auctions/:id/watch')
-  async unwatch(@Param('id') id: string, @Req() request: AuthedRequest): Promise<{ ok: true }> {
-    const auction = await this.auctions.byId(id)
+  @Delete('auctions/:contract/:id/watch')
+  async unwatch(
+    @Param('contract') contract: string,
+    @Param('id') id: string,
+    @Req() request: AuthedRequest,
+  ): Promise<{ ok: true }> {
+    const auction = await this.auctions.byId(parseContractAddress(contract), parseAuctionId(id))
     await this.watchlist.unwatch(wallet(request), auction.contractAddress, auction.auctionId)
     return { ok: true }
   }

@@ -18,20 +18,27 @@ export class AuctionsController {
     return this.auctions.list(status)
   }
 
-  @Get(':id')
-  byId(@Param('id') id: string): Promise<AuctionSnapshot> {
-    return this.auctions.byId(parseAuctionId(id))
+  @Get(':contract/:id')
+  byId(@Param('contract') contract: string, @Param('id') id: string): Promise<AuctionSnapshot> {
+    return this.auctions.byId(parseContractAddress(contract), parseAuctionId(id))
   }
 
-  @Get(':id/bids')
-  bids(@Param('id') id: string): Promise<BidDto[]> {
-    return this.auctions.bids(parseAuctionId(id))
+  @Get(':contract/:id/bids')
+  bids(@Param('contract') contract: string, @Param('id') id: string): Promise<BidDto[]> {
+    return this.auctions.bids(parseContractAddress(contract), parseAuctionId(id))
   }
 }
 
-function parseAuctionId(id: string): string {
+export function parseAuctionId(id: string): string {
   if (!/^\d+$/.test(id)) throw new BadRequestException('auction id must be a decimal number')
   return id
+}
+
+export function parseContractAddress(address: string): string {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    throw new BadRequestException('contract address must be a 0x-prefixed hex address')
+  }
+  return address.toLowerCase()
 }
 
 function isAuctionStatus(value: string): value is AuctionStatus {

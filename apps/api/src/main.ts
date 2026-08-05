@@ -19,7 +19,7 @@ app.useGlobalPipes(new ValidationPipe({ whitelist: true }))
 app.useWebSocketAdapter(new WsAdapter(app))
 
 // Express-level so GraphQL requests are measured too; the route label uses
-// the matched pattern (/auctions/:id), not the raw path — bounded cardinality.
+// the matched pattern (/auctions/:contract/:id), not the raw path — bounded cardinality.
 const metrics = app.get(MetricsService)
 app.use((req: Request, res: Response, next: NextFunction) => {
   const end = metrics.httpDuration.startTimer({ method: req.method })

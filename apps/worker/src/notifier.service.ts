@@ -79,7 +79,7 @@ export class NotifierService implements OnApplicationBootstrap, OnApplicationShu
     }
     const { type, contractAddress, auctionId } = parsed.data
 
-    await this.redis.del([CACHE_KEYS.auction(auctionId), ...ALL_AUCTION_LIST_KEYS])
+    await this.redis.del([CACHE_KEYS.auction(contractAddress, auctionId), ...ALL_AUCTION_LIST_KEYS])
 
     const row = await this.db
       .selectFrom('auctions')

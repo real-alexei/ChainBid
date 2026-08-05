@@ -30,8 +30,8 @@ export function ListPage() {
       {auctions.map((auction) => (
         <Link
           key={`${auction.contractAddress}-${auction.auctionId}`}
-          to="/auction/$auctionId"
-          params={{ auctionId: auction.auctionId }}
+          to="/auction/$contractAddress/$auctionId"
+          params={{ contractAddress: auction.contractAddress, auctionId: auction.auctionId }}
           className="rounded-lg border border-zinc-800 p-4 transition hover:border-zinc-600"
         >
           <div className="flex items-center justify-between">

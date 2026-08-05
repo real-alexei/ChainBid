@@ -51,14 +51,15 @@ e2e             full-loop test driven by CI
 
 - `GET /auth/nonce` → sign an EIP-4361 message → `POST /auth/verify` → JWT (nonces in Redis,
   single-use via `GETDEL`).
-- `GET /auctions`, `GET /auctions/:id`, `GET /auctions/:id/bids` — Redis-cached read models,
-  invalidated by the projection pipeline, short TTL as safety net.
-- `POST/DELETE /auctions/:id/watch`, `GET /watchlist` — JWT-guarded; writes go through a
-  transactional outbox relayed to Kafka.
+- `GET /auctions`, `GET /auctions/:contract/:id`, `GET /auctions/:contract/:id/bids` —
+  Redis-cached read models, invalidated by the projection pipeline, short TTL as safety net.
+  Auction ids are per-contract, so single-auction routes carry the contract address too.
+- `POST/DELETE /auctions/:contract/:id/watch`, `GET /watchlist` — JWT-guarded; writes go
+  through a transactional outbox relayed to Kafka.
 - `POST /graphql` — code-first schema: `auctions` connection (keyset pagination), `auction` with
   nested bids resolver.
-- `WS /ws` — raw WebSocket; subscribe per auction id, receive `auction.created` / `bid.placed` /
-  `auction.settled` frames fanned out via Redis pub/sub (multi-instance safe).
+- `WS /ws` — raw WebSocket; subscribe per (contract, auction id), receive `auction.created` /
+  `bid.placed` / `auction.settled` frames fanned out via Redis pub/sub (multi-instance safe).
 - `GET /health` (postgres, redis, rpc, indexer lag), `GET /metrics` (Prometheus: default metrics,
   HTTP latency histogram by route pattern, indexer lag gauge).
 

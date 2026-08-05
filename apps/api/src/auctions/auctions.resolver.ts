@@ -25,12 +25,15 @@ export class AuctionsResolver {
   }
 
   @Query(() => AuctionModel, { name: 'auction' })
-  auctionQuery(@Args('auctionId') auctionId: string): Promise<AuctionSnapshot> {
-    return this.auctions.byId(auctionId)
+  auctionQuery(
+    @Args('contractAddress') contractAddress: string,
+    @Args('auctionId') auctionId: string,
+  ): Promise<AuctionSnapshot> {
+    return this.auctions.byId(contractAddress, auctionId)
   }
 
   @ResolveField(() => [BidModel])
   bids(@Parent() auction: AuctionModel): Promise<BidDto[]> {
-    return this.auctions.bids(auction.auctionId)
+    return this.auctions.bids(auction.contractAddress, auction.auctionId)
   }
 }
