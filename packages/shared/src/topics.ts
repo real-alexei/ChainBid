@@ -3,6 +3,8 @@ export const TOPICS = {
   chainEvents: 'chain.events',
   /** Emitted by the projection consumer after the read model commit. */
   auctionProjected: 'auction.projected',
+  /** API-originated domain events, moved from the outbox table by the relay. */
+  outboxEvents: 'outbox.events',
 } as const
 
 export const REDIS_CHANNELS = {

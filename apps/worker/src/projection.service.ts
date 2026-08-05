@@ -33,15 +33,17 @@ export class ProjectionService implements OnApplicationBootstrap, OnApplicationS
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    // The indexer declares this topic too; declaring it in both places lets
-    // either service start first with broker auto-creation off.
+    // Declares every topic the worker touches, and runs before the other
+    // services bootstrap (provider order). The indexer declares chain.events
+    // too, so either process can start first with broker auto-creation off.
     const admin = this.kafka.admin()
     await admin.connect()
     await admin.createTopics({
-      topics: [
-        { topic: TOPICS.chainEvents, numPartitions: 1, replicationFactor: 1 },
-        { topic: TOPICS.auctionProjected, numPartitions: 1, replicationFactor: 1 },
-      ],
+      topics: Object.values(TOPICS).map((topic) => ({
+        topic,
+        numPartitions: 1,
+        replicationFactor: 1,
+      })),
     })
     await admin.disconnect()
 

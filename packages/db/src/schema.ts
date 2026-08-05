@@ -90,6 +90,13 @@ export interface Users {
   wallet_address: string;
 }
 
+export interface Watchlist {
+  auction_id: Numeric;
+  contract_address: string;
+  created_at: Generated<Timestamp>;
+  wallet_address: string;
+}
+
 export interface DB {
   auctions: Auctions;
   bids: Bids;
@@ -97,4 +104,5 @@ export interface DB {
   nfts: Nfts;
   outbox: Outbox;
   users: Users;
+  watchlist: Watchlist;
 }

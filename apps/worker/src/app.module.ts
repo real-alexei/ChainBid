@@ -4,7 +4,9 @@ import { Kafka, logLevel } from 'kafkajs'
 import { createClient } from 'redis'
 import { ENV, loadEnv, type Env } from './env.js'
 import { NotifierService } from './notifier.service.js'
+import { OutboxRelayService } from './outbox-relay.service.js'
 import { ProjectionService } from './projection.service.js'
+import { SettlementService } from './settlement.service.js'
 import { DB, KAFKA, REDIS } from './tokens.js'
 
 export type RedisClient = ReturnType<typeof createClient>
@@ -36,8 +38,11 @@ export type RedisClient = ReturnType<typeof createClient>
         return client
       },
     },
+    // ProjectionService declares the Kafka topics and must bootstrap first.
     ProjectionService,
     NotifierService,
+    OutboxRelayService,
+    SettlementService,
   ],
 })
 export class AppModule {}

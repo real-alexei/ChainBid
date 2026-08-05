@@ -1,5 +1,6 @@
 export * from './auction-abi.js'
 export * from './cache-keys.js'
 export * from './chain-events.js'
+export * from './outbox-events.js'
 export * from './projections.js'
 export * from './topics.js'

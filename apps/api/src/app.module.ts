@@ -4,6 +4,7 @@ import { GraphQLModule } from '@nestjs/graphql'
 import { AuctionsModule } from './auctions/auctions.module.js'
 import { AuthModule } from './auth/auth.module.js'
 import { InfraModule } from './infra.module.js'
+import { WatchlistModule } from './watchlist/watchlist.module.js'
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { InfraModule } from './infra.module.js'
     }),
     AuthModule,
     AuctionsModule,
+    WatchlistModule,
   ],
 })
 export class AppModule {}

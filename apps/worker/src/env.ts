@@ -4,6 +4,8 @@ export interface Env {
   databaseUrl: string
   kafkaBrokers: string[]
   redisUrl: string
+  rpcUrl: string
+  settlerPrivateKey: string
 }
 
 export function loadEnv(): Env {
@@ -11,6 +13,8 @@ export function loadEnv(): Env {
     databaseUrl: required('DATABASE_URL'),
     kafkaBrokers: required('KAFKA_BROKERS').split(','),
     redisUrl: required('REDIS_URL'),
+    rpcUrl: required('RPC_URL'),
+    settlerPrivateKey: required('SETTLER_PRIVATE_KEY'),
   }
 }
 
